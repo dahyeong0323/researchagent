@@ -20,10 +20,12 @@ function normalizeTitle(title: string): string {
 }
 
 function titleTokens(title: string): Set<string> {
+  const weakTitleTokens = new Set(["사례", "선택"]);
+
   return new Set(
     normalizeTitle(title)
       .split(" ")
-      .filter((token) => token.length >= 2)
+      .filter((token) => token.length >= 2 && !weakTitleTokens.has(token))
   );
 }
 
