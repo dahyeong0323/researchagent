@@ -6,6 +6,7 @@ import { readFeedbackMemory } from "./feedback.ts";
 import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { scoutToMarkdown, scoutToMarkdownWithLlm } from "./scout.ts";
 import { processRawCandidates, processRawCandidatesWithLlm } from "./scout.ts";
+import { sendTelegramDailySummary } from "./telegram.ts";
 import type { RawSourceItem } from "./types.ts";
 
 loadLocalEnv();
@@ -113,6 +114,12 @@ async function main(): Promise<void> {
     process.stderr.write(
       `Notion write summary: ${successCount} ok, ${failureCount} failed, dryRun=${options.dryRun}\n`
     );
+    if (!options.dryRun) {
+      const successfulCandidateIds = new Set(
+        results.filter((result) => result.ok).map((result) => result.candidateId)
+      );
+      await sendTelegramDailySummary(candidates.filter((candidate) => successfulCandidateIds.has(candidate.id)));
+    }
     return;
   }
 

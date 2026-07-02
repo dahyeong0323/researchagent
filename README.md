@@ -59,9 +59,13 @@ NOTION_DATA_SOURCE_ID=
 NOTION_VERSION=2022-06-28
 SCOUT_USE_LLM=0
 SCOUT_FEEDBACK_PATH=data/research-agent/feedback.sample.json
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+TELEGRAM_ENABLED=0
 ```
 
 `OPENAI_API_KEY` is only required for LLM enrichment. `NOTION_API_KEY` and `NOTION_DATABASE_ID` or `NOTION_DATA_SOURCE_ID` are only required for live Notion writes or feedback sync.
+Set `TELEGRAM_ENABLED=1` with `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` to send interactive Top 5 notifications after live Notion writes. Dry runs never send Telegram messages.
 
 ## Local Scout
 
@@ -104,6 +108,16 @@ npm run scout:notion -- --dry-run
 Live writes require Notion environment variables and a Notion database whose properties match `docs/notion-db-schema.md`.
 
 The Notion database must include a `Candidate ID` rich text property. The agent writes `ScoutCandidate.id` there so future Telegram callbacks can find and update the same candidate.
+
+## Telegram Notifications
+
+After a live Notion write, enable Telegram notifications to receive the saved Top 5 candidates with `Selected`, `Shortlisted`, and `Rejected` buttons:
+
+```powershell
+npm run scout:notion -- --llm --limit 5
+```
+
+Telegram is notification-only in this MVP step. The buttons emit callback data such as `selected:<candidateId>`, but callback handling is intentionally not implemented yet.
 
 ## Feedback Loop
 
