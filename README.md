@@ -118,7 +118,7 @@ After a live Notion write, enable Telegram notifications to receive the saved To
 npm run scout:notion -- --llm --limit 5
 ```
 
-Telegram buttons emit callback data such as `selected:<candidateId>`, which the local polling worker can process into Notion status updates.
+Telegram buttons emit callback data such as `selected:<candidateId>` and `brief:<candidateId>`, which the local polling worker can process into Notion status updates or local writing brief files.
 
 Run the local polling worker to process Telegram button clicks and update Notion candidate statuses:
 
@@ -132,7 +132,7 @@ For one polling pass during local testing:
 npm run telegram:poll -- --once
 ```
 
-The poller only handles Telegram `callback_query` updates. It updates the Notion `상태` property by matching the `Candidate ID` property and stores its Telegram offset in `data/research-agent/telegram-offset.json` to avoid duplicate processing. It does not trigger writing, posting, LinkedIn activity, or any other automation.
+The poller only handles Telegram `callback_query` updates. It updates the Notion `상태` property by matching the `Candidate ID` property, offers a `Writing Brief 만들기` button after `Selected`, and stores its Telegram offset in `data/research-agent/telegram-offset.json` to avoid duplicate processing. Brief callbacks create Markdown files in `data/research-agent/writing-briefs/`. It does not trigger the writing agent, posting, LinkedIn activity, or any other automation.
 
 ## Feedback Loop
 

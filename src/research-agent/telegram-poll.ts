@@ -2,21 +2,23 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadLocalEnv } from "./env.ts";
+import { writeWritingBriefForCandidateId } from "./export-to-writing.ts";
 import { readNotionConfig, updateCandidateStatusByCandidateId } from "./notion.ts";
-import { readTelegramConfig, sendTelegramMessage } from "./telegram.ts";
+import { readTelegramConfig, sendTelegramMessage, type TelegramReplyMarkup } from "./telegram.ts";
 
 loadLocalEnv();
 
 const TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const DEFAULT_OFFSET_PATH = "data/research-agent/telegram-offset.json";
 
-type CallbackAction = "selected" | "shortlisted" | "rejected";
+type StatusCallbackAction = "selected" | "shortlisted" | "rejected";
+type CallbackAction = StatusCallbackAction | "brief";
 type NotionStatus = "Selected" | "Shortlisted" | "Rejected";
 
 type ParsedCallbackData = {
   action: CallbackAction;
   candidateId: string;
-  status: NotionStatus;
+  status?: NotionStatus;
 };
 
 type TelegramUpdate = {
@@ -27,7 +29,7 @@ type TelegramUpdate = {
   };
 };
 
-const STATUS_BY_ACTION: Record<CallbackAction, NotionStatus> = {
+const STATUS_BY_ACTION: Record<StatusCallbackAction, NotionStatus> = {
   selected: "Selected",
   shortlisted: "Shortlisted",
   rejected: "Rejected"
@@ -53,7 +55,14 @@ export function parseTelegramCallbackData(data?: string): ParsedCallbackData | u
 
   const action = data.slice(0, separatorIndex) as CallbackAction;
   const candidateId = data.slice(separatorIndex + 1).trim();
-  const status = STATUS_BY_ACTION[action];
+  if (action === "brief" && candidateId) {
+    return {
+      action,
+      candidateId
+    };
+  }
+
+  const status = STATUS_BY_ACTION[action as StatusCallbackAction];
 
   if (!status || !candidateId) {
     return undefined;
@@ -63,6 +72,19 @@ export function parseTelegramCallbackData(data?: string): ParsedCallbackData | u
     action,
     candidateId,
     status
+  };
+}
+
+function buildWritingBriefKeyboard(candidateId: string): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "Writing Brief 만들기",
+          callback_data: `brief:${candidateId}`
+        }
+      ]
+    ]
   };
 }
 
@@ -146,6 +168,28 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
     return;
   }
 
+  if (parsed.action === "brief") {
+    const outputPath = await writeWritingBriefForCandidateId(parsed.candidateId);
+    if (!outputPath) {
+      const message = `Writing brief 생성 실패: 후보를 찾지 못했습니다 (${parsed.candidateId})`;
+      warn(message);
+      await answerCallbackQuery(botToken, callbackQuery.id, message.slice(0, 180)).catch((error) =>
+        warn(error instanceof Error ? error.message : String(error))
+      );
+      return;
+    }
+
+    const message = `Writing brief 생성 완료: ${outputPath}`;
+    await answerCallbackQuery(botToken, callbackQuery.id, "Writing brief 생성 완료");
+    await sendTelegramMessage(message);
+    info(message);
+    return;
+  }
+
+  if (!parsed.status) {
+    return;
+  }
+
   const result = await updateCandidateStatusByCandidateId(parsed.candidateId, parsed.status, readNotionConfig(false));
   if (!result.ok) {
     const message = result.error ?? "Notion 상태 업데이트 실패";
@@ -159,7 +203,10 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
   const topicName = result.topicName ?? parsed.candidateId;
   const confirmation = `${parsed.status} 처리 완료: ${topicName}`;
   await answerCallbackQuery(botToken, callbackQuery.id, confirmation);
-  await sendTelegramMessage(confirmation);
+  await sendTelegramMessage(
+    confirmation,
+    parsed.action === "selected" ? buildWritingBriefKeyboard(parsed.candidateId) : undefined
+  );
   info(confirmation);
 }
 

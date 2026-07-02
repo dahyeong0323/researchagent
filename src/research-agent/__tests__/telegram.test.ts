@@ -54,13 +54,20 @@ describe("Telegram daily notification", () => {
       { text: "Shortlisted", callback_data: "shortlisted:sample-003" },
       { text: "Rejected", callback_data: "rejected:sample-003" }
     ]);
+    expect(keyboard.inline_keyboard[1]).toEqual([
+      { text: "Writing Brief 만들기", callback_data: "brief:sample-003" }
+    ]);
   });
 
-  it("parses callback data into a Notion status update target", () => {
+  it("parses callback data into a Notion status update or brief target", () => {
     expect(parseTelegramCallbackData("selected:sample-003")).toEqual({
       action: "selected",
       candidateId: "sample-003",
       status: "Selected"
+    });
+    expect(parseTelegramCallbackData("brief:sample-003")).toEqual({
+      action: "brief",
+      candidateId: "sample-003"
     });
     expect(parseTelegramCallbackData("ignored:sample-003")).toBeUndefined();
   });

@@ -14,7 +14,7 @@ type TelegramInlineKeyboardButton = {
   callback_data: string;
 };
 
-type TelegramReplyMarkup = {
+export type TelegramReplyMarkup = {
   inline_keyboard: TelegramInlineKeyboardButton[][];
 };
 
@@ -90,35 +90,43 @@ export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string
 export function buildCandidateInlineKeyboard(candidate: ScoutCandidate): TelegramReplyMarkup {
   return {
     inline_keyboard: [
+      buildCandidateStatusButtonRow(candidate),
       [
         {
-          text: "Selected",
-          callback_data: `selected:${candidate.id}`
-        },
-        {
-          text: "Shortlisted",
-          callback_data: `shortlisted:${candidate.id}`
-        },
-        {
-          text: "Rejected",
-          callback_data: `rejected:${candidate.id}`
+          text: "Writing Brief 만들기",
+          callback_data: `brief:${candidate.id}`
         }
       ]
     ]
   };
 }
 
+function buildCandidateStatusButtonRow(candidate: ScoutCandidate): TelegramInlineKeyboardButton[] {
+  return [
+    {
+      text: "Selected",
+      callback_data: `selected:${candidate.id}`
+    },
+    {
+      text: "Shortlisted",
+      callback_data: `shortlisted:${candidate.id}`
+    },
+    {
+      text: "Rejected",
+      callback_data: `rejected:${candidate.id}`
+    }
+  ];
+}
+
 export function buildDailySummaryInlineKeyboard(candidates: ScoutCandidate[]): TelegramReplyMarkup {
   return {
     inline_keyboard: candidates
       .slice(0, TOP_CANDIDATE_LIMIT)
-      .flatMap((candidate, index) =>
-        buildCandidateInlineKeyboard(candidate).inline_keyboard.map((row) =>
-          row.map((button) => ({
-            ...button,
-            text: `${index + 1}. ${button.text}`
-          }))
-        )
+      .map((candidate, index) =>
+        buildCandidateStatusButtonRow(candidate).map((button) => ({
+          ...button,
+          text: `${index + 1}. ${button.text}`
+        }))
       )
   };
 }

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DEFAULT_INPUT_PATH } from "./config.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
@@ -8,7 +9,7 @@ import type { FeedbackMemory, RawSourceItem, ScoutCandidate, WritingBrief } from
 
 loadLocalEnv();
 
-const DEFAULT_OUTPUT_DIR = "data/research-agent/writing-briefs";
+export const DEFAULT_WRITING_BRIEF_OUTPUT_DIR = "data/research-agent/writing-briefs";
 
 type CliOptions = {
   inputPath: string;
@@ -25,7 +26,7 @@ function readCliOptions(argv: string[]): CliOptions {
   const options: CliOptions = {
     inputPath: DEFAULT_INPUT_PATH,
     feedbackPath: process.env.SCOUT_FEEDBACK_PATH,
-    outputDir: DEFAULT_OUTPUT_DIR,
+    outputDir: DEFAULT_WRITING_BRIEF_OUTPUT_DIR,
     date: todayIsoDate()
   };
 
@@ -51,7 +52,7 @@ function readCliOptions(argv: string[]): CliOptions {
   return options;
 }
 
-function assertRawSourceItems(value: unknown): asserts value is RawSourceItem[] {
+export function assertRawSourceItems(value: unknown): asserts value is RawSourceItem[] {
   if (!Array.isArray(value)) {
     throw new Error("Input JSON must be an array of raw source items.");
   }
@@ -113,7 +114,7 @@ function counterArgumentsFor(candidate: ScoutCandidate): string[] {
   return argumentsList;
 }
 
-function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
+export function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
   return {
     topicName: candidate.topicName,
     coreWhyGudiQuestion: candidate.coreWhyGudiQuestion,
@@ -132,7 +133,7 @@ function renderList(items: string[]): string {
   return items.map((item) => `- ${item}`).join("\n");
 }
 
-function renderWritingBrief(brief: WritingBrief): string {
+export function renderWritingBrief(brief: WritingBrief): string {
   return [
     `# Writing Brief: ${brief.topicName}`,
     "",
@@ -183,6 +184,43 @@ function slugifyFilePart(value: string): string {
     .slice(0, 80);
 }
 
+export async function writeWritingBriefForCandidate(
+  candidate: ScoutCandidate,
+  options: { date?: string; outputDir?: string } = {}
+): Promise<string> {
+  const date = options.date ?? todayIsoDate();
+  const outputDir = options.outputDir ?? DEFAULT_WRITING_BRIEF_OUTPUT_DIR;
+  await mkdir(resolve(outputDir), { recursive: true });
+
+  const brief = toWritingBrief(candidate);
+  const filename = `${date}-${slugifyFilePart(candidate.topicName)}.md`;
+  const outputPath = resolve(join(outputDir, filename));
+  await writeFile(outputPath, renderWritingBrief(brief), "utf8");
+  return outputPath;
+}
+
+export async function writeWritingBriefForCandidateId(
+  candidateId: string,
+  options: { inputPath?: string; feedbackPath?: string; outputDir?: string; date?: string } = {}
+): Promise<string | undefined> {
+  const input = await readFile(resolve(options.inputPath ?? DEFAULT_INPUT_PATH), "utf8");
+  const parsed: unknown = JSON.parse(input);
+  assertRawSourceItems(parsed);
+
+  const memory = await readFeedbackMemory(options.feedbackPath);
+  const candidates = processRawCandidates(parsed, parsed.length, memory);
+  const candidate = candidates.find((item) => item.id === candidateId);
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  return writeWritingBriefForCandidate(candidate, {
+    date: options.date,
+    outputDir: options.outputDir
+  });
+}
+
 async function main(): Promise<void> {
   const options = readCliOptions(process.argv.slice(2));
   if (!options.feedbackPath) {
@@ -209,16 +247,18 @@ async function main(): Promise<void> {
   await mkdir(resolve(options.outputDir), { recursive: true });
 
   for (const candidate of selectedCandidates) {
-    const brief = toWritingBrief(candidate);
-    const filename = `${options.date}-${slugifyFilePart(candidate.topicName)}.md`;
-    const outputPath = resolve(join(options.outputDir, filename));
-    await writeFile(outputPath, renderWritingBrief(brief), "utf8");
+    const outputPath = await writeWritingBriefForCandidate(candidate, {
+      date: options.date,
+      outputDir: options.outputDir
+    });
     process.stdout.write(`Exported writing brief: ${outputPath}\n`);
   }
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`Writing brief export failed: ${message}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Writing brief export failed: ${message}\n`);
+    process.exitCode = 1;
+  });
+}
