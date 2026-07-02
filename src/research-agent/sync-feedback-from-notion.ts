@@ -1,7 +1,10 @@
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { loadLocalEnv } from "./env.ts";
 import { normalizeFeedbackMemory } from "./feedback.ts";
 import { readFeedbackRecordsFromNotion, readNotionConfig } from "./notion.ts";
+
+loadLocalEnv();
 
 const DEFAULT_OUTPUT_PATH = "data/research-agent/feedback.notion.json";
 

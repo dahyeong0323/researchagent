@@ -1,11 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DEFAULT_INPUT_PATH, DEFAULT_TOP_LIMIT } from "./config.ts";
+import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
 import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { scoutToMarkdown, scoutToMarkdownWithLlm } from "./scout.ts";
 import { processRawCandidates, processRawCandidatesWithLlm } from "./scout.ts";
 import type { RawSourceItem } from "./types.ts";
+
+loadLocalEnv();
 
 type CliOptions = {
   inputPath: string;

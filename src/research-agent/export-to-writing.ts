@@ -1,9 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { DEFAULT_INPUT_PATH } from "./config.ts";
+import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
 import { processRawCandidates } from "./scout.ts";
 import type { FeedbackMemory, RawSourceItem, ScoutCandidate, WritingBrief } from "./types.ts";
+
+loadLocalEnv();
 
 const DEFAULT_OUTPUT_DIR = "data/research-agent/writing-briefs";
 
