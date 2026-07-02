@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseTelegramCallbackData } from "../telegram-poll.ts";
 import { buildCandidateInlineKeyboard, renderTelegramDailySummary } from "../telegram.ts";
 import type { ScoutCandidate } from "../types.ts";
 
@@ -53,5 +54,14 @@ describe("Telegram daily notification", () => {
       { text: "Shortlisted", callback_data: "shortlisted:sample-003" },
       { text: "Rejected", callback_data: "rejected:sample-003" }
     ]);
+  });
+
+  it("parses callback data into a Notion status update target", () => {
+    expect(parseTelegramCallbackData("selected:sample-003")).toEqual({
+      action: "selected",
+      candidateId: "sample-003",
+      status: "Selected"
+    });
+    expect(parseTelegramCallbackData("ignored:sample-003")).toBeUndefined();
   });
 });

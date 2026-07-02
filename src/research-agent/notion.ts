@@ -27,6 +27,15 @@ export type NotionWriteResult = {
   error?: string;
 };
 
+export type NotionStatusUpdateResult = {
+  candidateId: string;
+  status: "Selected" | "Shortlisted" | "Rejected";
+  ok: boolean;
+  pageId?: string;
+  topicName?: string;
+  error?: string;
+};
+
 type NotionQueryResponse = {
   results?: unknown[];
   has_more?: boolean;
@@ -372,6 +381,30 @@ async function queryNotionPages(config: NotionConfig): Promise<unknown[]> {
   return pages;
 }
 
+async function queryNotionPagesWithBody(config: NotionConfig, body: Record<string, unknown>): Promise<unknown[]> {
+  validateNotionReadConfig(config);
+
+  const response = await fetch(notionQueryUrl(config), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "Notion-Version": config.notionVersion
+    },
+    body: JSON.stringify(body)
+  });
+
+  const responseBody = (await response.json().catch(async () => ({
+    message: await response.text()
+  }))) as NotionQueryResponse & { message?: string };
+
+  if (!response.ok) {
+    throw new Error(`Notion query failed with ${response.status}: ${responseBody.message ?? JSON.stringify(responseBody)}`);
+  }
+
+  return Array.isArray(responseBody.results) ? responseBody.results : [];
+}
+
 function pageId(page: unknown): string | undefined {
   return page && typeof page === "object" && "id" in page ? String((page as { id: unknown }).id) : undefined;
 }
@@ -471,6 +504,84 @@ function statusForFeedback(value?: string): CandidateFeedbackRecord["status"] | 
     return value;
   }
   return undefined;
+}
+
+async function updateNotionPageStatus(
+  pageIdValue: string,
+  status: NotionStatusUpdateResult["status"],
+  config: NotionConfig
+): Promise<void> {
+  validateNotionReadConfig(config);
+
+  const response = await fetch(`${NOTION_PAGES_URL}/${pageIdValue}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+      "Notion-Version": config.notionVersion
+    },
+    body: JSON.stringify({
+      properties: {
+        "상태": select(status)
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const responseBody = await response.json().catch(async () => ({ message: await response.text() }));
+    const message =
+      responseBody && typeof responseBody === "object" && "message" in responseBody
+        ? String((responseBody as { message: unknown }).message)
+        : JSON.stringify(responseBody);
+    throw new Error(`Notion status update failed with ${response.status}: ${message}`);
+  }
+}
+
+export async function updateCandidateStatusByCandidateId(
+  candidateId: string,
+  status: NotionStatusUpdateResult["status"],
+  config = readNotionConfig(false)
+): Promise<NotionStatusUpdateResult> {
+  try {
+    const pages = await queryNotionPagesWithBody(config, {
+      page_size: 1,
+      filter: {
+        property: "Candidate ID",
+        rich_text: {
+          equals: candidateId
+        }
+      }
+    });
+
+    const page = pages[0];
+    const targetPageId = pageId(page);
+    if (!page || !targetPageId) {
+      return {
+        candidateId,
+        status,
+        ok: false,
+        error: `Candidate not found for Candidate ID: ${candidateId}`
+      };
+    }
+
+    await updateNotionPageStatus(targetPageId, status, config);
+    const properties = pageProperties(page);
+
+    return {
+      candidateId,
+      status,
+      ok: true,
+      pageId: targetPageId,
+      topicName: titleProperty(properties["소재명"])
+    };
+  } catch (error) {
+    return {
+      candidateId,
+      status,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 export async function readFeedbackRecordsFromNotion(

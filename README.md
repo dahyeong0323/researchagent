@@ -40,6 +40,7 @@ npm run scout:notion -- --dry-run
 npm run scout:feedback
 npm run export:selected
 npm run feedback:notion
+npm run telegram:poll
 npm run typecheck
 npm test
 ```
@@ -117,7 +118,21 @@ After a live Notion write, enable Telegram notifications to receive the saved To
 npm run scout:notion -- --llm --limit 5
 ```
 
-Telegram is notification-only in this MVP step. The buttons emit callback data such as `selected:<candidateId>`, but callback handling is intentionally not implemented yet.
+Telegram buttons emit callback data such as `selected:<candidateId>`, which the local polling worker can process into Notion status updates.
+
+Run the local polling worker to process Telegram button clicks and update Notion candidate statuses:
+
+```powershell
+npm run telegram:poll
+```
+
+For one polling pass during local testing:
+
+```powershell
+npm run telegram:poll -- --once
+```
+
+The poller only handles Telegram `callback_query` updates. It updates the Notion `상태` property by matching the `Candidate ID` property and stores its Telegram offset in `data/research-agent/telegram-offset.json` to avoid duplicate processing. It does not trigger writing, posting, LinkedIn activity, or any other automation.
 
 ## Feedback Loop
 
