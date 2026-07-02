@@ -1,0 +1,14 @@
+{
+  "name": "linkedin-research-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scout:local": "node src/research-agent/index.ts",
+    "scout:local:llm": "node src/research-agent/index.ts --llm",
+    "scout:notion": "node src/research-agent/index.ts --notion",
+    "scout:feedback": "node src/research-agent/index.ts --feedback data/research-agent/feedback.sample.json",
+    "export:selected": "node src/research-agent/export-to-writing.ts --feedback data/research-agent/feedback.sample.json",
+    "feedback:notion": "node src/research-agent/sync-feedback-from-notion.ts"
+  }
+}

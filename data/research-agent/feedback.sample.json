@@ -1,0 +1,82 @@
+{
+  "categoryWeights": {
+    "리테일/브랜드": 1.08,
+    "팝업/오프라인": 1.04,
+    "스타트업/투자": 0.96,
+    "앱/프로덕트": 1.0,
+    "소비자 트렌드": 1.02
+  },
+  "sourceCategoryWeights": {
+    "retail_brand": 1.06,
+    "popup_offline": 1.04,
+    "investment_news": 0.94
+  },
+  "rejectedPatterns": [
+    "단순 투자유치",
+    "거시경제 전망",
+    "출처 불명확",
+    "보도자료"
+  ],
+  "preferredAngles": [
+    "오프라인 존재 이유",
+    "소비자 신뢰",
+    "선물 소비",
+    "브랜드 포지셔닝",
+    "생활 루틴"
+  ],
+  "recentTopics": [
+    "Olive Better",
+    "웰니스 리테일",
+    "전과 이야기"
+  ],
+  "candidateFeedback": [
+    {
+      "candidateId": "sample-001",
+      "topicName": "Olive Better",
+      "category": "리테일/브랜드",
+      "sourceCategory": "retail_brand",
+      "status": "Shortlisted",
+      "feedbackLabels": [
+        "너무 겹침",
+        "좋은데 추가조사 필요"
+      ],
+      "angleKeywords": [
+        "웰니스",
+        "오프라인 존재 이유"
+      ],
+      "decidedAt": "2026-07-02"
+    },
+    {
+      "candidateId": "sample-012",
+      "topicName": "중고거래 플랫폼 오프라인 검수",
+      "category": "팝업/오프라인",
+      "sourceCategory": "popup_offline",
+      "status": "Selected",
+      "feedbackLabels": [
+        "바로 글 가능",
+        "소비자 행동 관점 약함"
+      ],
+      "angleKeywords": [
+        "소비자 신뢰",
+        "검수",
+        "오프라인 존재 이유"
+      ],
+      "decidedAt": "2026-07-02"
+    },
+    {
+      "candidateId": "sample-019",
+      "topicName": "개인 금융 교육 스타트업 투자",
+      "category": "스타트업/투자",
+      "sourceCategory": "investment_news",
+      "status": "Rejected",
+      "feedbackLabels": [
+        "너무 뉴스 같음",
+        "왜 굳이 약함"
+      ],
+      "angleKeywords": [
+        "금융 교육"
+      ],
+      "decidedAt": "2026-07-02"
+    }
+  ]
+}
