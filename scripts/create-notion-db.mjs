@@ -26,6 +26,7 @@ if (!parentPageId) {
 const options = (names) => names.map((name) => ({ name }));
 
 const properties = {
+  "Candidate ID": { rich_text: {} },
   소재명: { title: {} },
   "발견 날짜": { date: {} },
   상태: { select: { options: options(["New", "Shortlisted", "Selected", "Written", "Published", "Rejected"]) } },

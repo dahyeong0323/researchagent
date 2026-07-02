@@ -25,6 +25,7 @@ if (!databaseId) {
 
 const options = (names) => names.map((name) => ({ name }));
 const properties = {
+  "Candidate ID": { rich_text: {} },
   "상태": { select: { options: options(["New", "Shortlisted", "Selected", "Written", "Published", "Rejected"]) } },
   "피드백 라벨": {
     multi_select: {

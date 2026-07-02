@@ -63,6 +63,7 @@ npm.cmd run export:selected -- --feedback data/research-agent/feedback.notion.js
 
 | Property | Type |
 | --- | --- |
+| Candidate ID | Text / Rich text |
 | 소재명 | Title |
 | 발견 날짜 | Date |
 | 상태 | Select |
@@ -149,5 +150,7 @@ npm.cmd run export:selected -- --feedback data/research-agent/feedback.notion.js
 - 비즈니스 각도 약함
 
 ## Notes
+
+`Candidate ID` stores `ScoutCandidate.id`. Telegram callbacks can use this value later to find the candidate and update its status without relying on the Notion page ID.
 
 The writer uses Notion's create page API with a parent database or data source and a `properties` object whose keys match the schema above. Long interpretive fields are also copied into the page body as readable blocks.

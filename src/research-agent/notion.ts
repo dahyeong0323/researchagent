@@ -168,6 +168,7 @@ export function buildCandidatePagePayload(candidate: ScoutCandidate, parent: Not
   return {
     parent,
     properties: {
+      "Candidate ID": richText(candidate.id),
       "소재명": title(candidate.topicName),
       "발견 날짜": date(candidate.discoveredDate),
       "상태": select(statusName(candidate.status)),
@@ -204,6 +205,7 @@ export function buildCandidatePagePayload(candidate: ScoutCandidate, parent: Not
 export function validateCandidatePagePayload(payload: ReturnType<typeof buildCandidatePagePayload>): void {
   const properties = payload.properties;
   const requiredProperties = [
+    "Candidate ID",
     "소재명",
     "발견 날짜",
     "상태",
@@ -404,6 +406,27 @@ function titleProperty(property: unknown): string | undefined {
     .trim();
 }
 
+function richTextProperty(property: unknown): string | undefined {
+  if (!property || typeof property !== "object" || !("rich_text" in property)) {
+    return undefined;
+  }
+
+  const richTextItems = (property as { rich_text: unknown }).rich_text;
+  if (!Array.isArray(richTextItems)) {
+    return undefined;
+  }
+
+  return richTextItems
+    .map((item) => {
+      if (item && typeof item === "object" && "plain_text" in item) {
+        return String((item as { plain_text: unknown }).plain_text);
+      }
+      return "";
+    })
+    .join("")
+    .trim();
+}
+
 function selectProperty(property: unknown): string | undefined {
   if (!property || typeof property !== "object" || !("select" in property)) {
     return undefined;
@@ -470,7 +493,7 @@ export async function readFeedbackRecordsFromNotion(
     }
 
     records.push({
-      candidateId: pageId(page),
+      candidateId: richTextProperty(properties["Candidate ID"]) ?? pageId(page),
       topicName,
       category: category as CandidateFeedbackRecord["category"],
       status,

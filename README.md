@@ -103,6 +103,8 @@ npm run scout:notion -- --dry-run
 
 Live writes require Notion environment variables and a Notion database whose properties match `docs/notion-db-schema.md`.
 
+The Notion database must include a `Candidate ID` rich text property. The agent writes `ScoutCandidate.id` there so future Telegram callbacks can find and update the same candidate.
+
 ## Feedback Loop
 
 Use sample local feedback:
