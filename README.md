@@ -162,6 +162,14 @@ Export `Selected` candidates to writing-agent Markdown briefs:
 npm run export:selected
 ```
 
+Generate deeper Writing Brief v2 strategy notes with an LLM pass:
+
+```powershell
+npm run export:selected:llm
+```
+
+The LLM pass sharpens the brief before it reaches the writing agent. It focuses on concrete tension, non-obvious insight, business mechanism, consumer psychology, weak theses to avoid, and evidence that still needs checking. If `OPENAI_API_KEY` is missing or the LLM call fails, the exporter falls back to the local rule-based v2 brief.
+
 Generated briefs are written to:
 
 ```text

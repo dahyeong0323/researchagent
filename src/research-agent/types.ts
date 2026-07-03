@@ -137,15 +137,31 @@ export type FeedbackMemory = {
   candidateFeedback: CandidateFeedbackRecord[];
 };
 
+export type WritingBriefStyleReference =
+  | "business-observation"
+  | "product-observation"
+  | "retail-observation"
+  | "startup-observation"
+  | "consumer-behavior-observation";
+
 export type WritingBrief = {
   topicName: string;
   coreWhyGudiQuestion: string;
   oneLineSummary: string;
   businessObservationAngle: string;
   consumerBehaviorAngle: string;
+  coreTension: string;
+  nonObviousInsight: string;
+  businessMechanism: string;
+  consumerPsychology: string;
+  sharpThesis: string;
+  genericThesisToAvoid: string[];
+  betterOpeningScene: string;
+  postOutline: string[];
+  evidenceNeeded: string[];
   possibleStructure: string[];
   counterArguments: string[];
   sourceUrls: string[];
   recommendedFormat: RecommendedFormat;
-  styleReference: "olive-better";
+  styleReference: WritingBriefStyleReference;
 };

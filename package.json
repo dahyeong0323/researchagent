@@ -9,6 +9,7 @@
     "scout:notion": "tsx src/research-agent/index.ts --notion",
     "scout:feedback": "tsx src/research-agent/index.ts --feedback data/research-agent/feedback.sample.json",
     "export:selected": "tsx src/research-agent/export-to-writing.ts --feedback data/research-agent/feedback.sample.json",
+    "export:selected:llm": "tsx src/research-agent/export-to-writing.ts --feedback data/research-agent/feedback.notion.json --llm",
     "feedback:notion": "tsx src/research-agent/sync-feedback-from-notion.ts",
     "telegram:poll": "tsx src/research-agent/telegram-poll.ts",
     "typecheck": "tsc --noEmit",

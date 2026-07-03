@@ -5,7 +5,13 @@ import { DEFAULT_INPUT_PATH } from "./config.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
 import { processRawCandidates } from "./scout.ts";
-import type { FeedbackMemory, RawSourceItem, ScoutCandidate, WritingBrief } from "./types.ts";
+import type {
+  FeedbackMemory,
+  RawSourceItem,
+  ScoutCandidate,
+  WritingBrief,
+  WritingBriefStyleReference
+} from "./types.ts";
 
 loadLocalEnv();
 
@@ -16,6 +22,7 @@ type CliOptions = {
   feedbackPath?: string;
   outputDir: string;
   date: string;
+  useLlm: boolean;
 };
 
 function todayIsoDate(): string {
@@ -27,7 +34,8 @@ function readCliOptions(argv: string[]): CliOptions {
     inputPath: DEFAULT_INPUT_PATH,
     feedbackPath: process.env.SCOUT_FEEDBACK_PATH,
     outputDir: DEFAULT_WRITING_BRIEF_OUTPUT_DIR,
-    date: todayIsoDate()
+    date: todayIsoDate(),
+    useLlm: false
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -46,6 +54,10 @@ function readCliOptions(argv: string[]): CliOptions {
     } else if (arg === "--date" && next) {
       options.date = next;
       index += 1;
+    } else if (arg === "--llm") {
+      options.useLlm = true;
+    } else if (arg === "--no-llm") {
+      options.useLlm = false;
     }
   }
 
@@ -87,14 +99,255 @@ function isSelectedCandidate(candidate: ScoutCandidate, memory: FeedbackMemory):
   );
 }
 
-function possibleStructureFor(candidate: ScoutCandidate): string[] {
+function candidateText(candidate: ScoutCandidate): string {
   return [
-    `구체 장면은 '${candidate.topicName}'에서 시작한다.`,
-    `핵심 질문을 먼저 둔다: ${candidate.coreWhyGudiQuestion}`,
+    candidate.category,
+    candidate.topicName,
+    candidate.oneLineSummary,
+    candidate.coreWhyGudiQuestion,
     candidate.businessObservationAngle,
     candidate.consumerBehaviorAngle,
-    "마지막에는 이 사례가 단순 트렌드가 아니라 어떤 소비/비즈니스 구조를 보여주는지 조용히 정리한다."
+    candidate.connectionToExistingPosts,
+    candidate.sourceName
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function hasAny(candidate: ScoutCandidate, keywords: string[]): boolean {
+  const text = candidateText(candidate);
+  return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+}
+
+function isMeditationAccountabilityCase(candidate: ScoutCandidate): boolean {
+  return (
+    candidate.category === "앱/프로덕트" &&
+    hasAny(candidate, ["명상", "meditation", "mindfulness"]) &&
+    hasAny(candidate, ["친구", "체크인", "check-in", "checkin", "accountability"])
+  );
+}
+
+export function chooseStyleReference(candidate: ScoutCandidate): WritingBriefStyleReference {
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return "retail-observation";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return "product-observation";
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return "startup-observation";
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return "consumer-behavior-observation";
+  }
+
+  return "business-observation";
+}
+
+export function inferCoreTension(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "명상은 본래 혼자 조용히 하는 행위인데, 이 앱은 오히려 친구의 확인을 전면에 둔다.";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return `사용자는 '${candidate.topicName}'의 기능을 원하지만, 앱은 기능 사용보다 반복 방문과 행동 지속을 더 먼저 설계해야 한다.`;
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return `온라인에서 더 빠르게 살 수 있는 시대에, '${candidate.topicName}'은 굳이 오프라인 경험이나 브랜드 장면을 만들어야 한다.`;
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return `스타트업 소식은 성장 서사로 읽히기 쉽지만, '${candidate.topicName}'에서 봐야 할 것은 시장이 실제로 어떤 문제에 돈을 쓰기 시작했는지다.`;
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return `개인의 취향처럼 보이는 '${candidate.topicName}'이 사실은 주변 시선, 비교, 자기관리 압력과 연결될 수 있다.`;
+  }
+
+  return `'${candidate.topicName}'은 단순한 새 소식처럼 보이지만, 사용자가 왜 굳이 이 선택을 하는지 설명해야 글감이 된다.`;
+}
+
+export function inferBusinessMechanism(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "콘텐츠 경쟁이 아니라 habit retention과 accountability를 설계하는 방식이다. 명상을 더 많이 공급하는 대신, 사용자가 다시 돌아오고 약속을 끊지 않게 만드는 장치를 전면에 둔다.";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return `핵심은 기능 추가보다 사용 빈도를 만드는 루프다. '${candidate.topicName}'이 알림, 기록, 공유, 보상 중 무엇으로 retention을 만들려는지 확인해야 한다.`;
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return `매장의 역할을 판매 채널이 아니라 브랜드 신뢰, 체류 시간, 재방문 이유를 만드는 장치로 바꾸는 실험일 수 있다. 실제 전환이나 객단가 효과는 추가 확인이 필요하다.`;
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return `투자 뉴스 자체보다 중요한 것은 어떤 고객군의 예산이 새 카테고리로 이동하는지다. 수익 모델, 반복 구매, 세일즈 사이클이 맞물릴 때 비즈니스 메커니즘이 설명된다.`;
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return `트렌드 확산은 취향의 문제가 아니라 반복 구매, 인증 가능성, 소속감 같은 행동 비용을 낮추는 구조가 있을 때 강해진다.`;
+  }
+
+  return `이 사례의 비즈니스 메커니즘은 '${candidate.businessObservationAngle}'이라는 관찰을 실제 고객 행동과 수익 구조로 연결할 때 드러난다.`;
+}
+
+export function inferConsumerPsychology(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "사람은 의지만으로 루틴을 지속하기 어렵고, 누군가가 확인할 때 행동을 개인 목표가 아니라 작은 약속처럼 느낀다.";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return "사용자는 좋은 기능을 발견했다고 계속 쓰지 않는다. 다시 켜야 할 이유가 즉시 떠오르거나, 끊으면 손해처럼 느껴질 때 습관이 된다.";
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return "소비자는 물건만 사러 가지 않는다. 직접 보고, 비교하고, 사진으로 남기고, 내가 이 브랜드를 고른 이유를 스스로 납득하려고 공간을 찾는다.";
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return "새 서비스가 설득력을 얻는 순간은 사용자가 문제를 멋진 혁신으로 이해할 때가 아니라, 기존 방식의 불편을 더 이상 당연하게 여기지 않을 때다.";
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return "소비자는 합리적 필요만으로 움직이지 않는다. 남들이 알아봐 주는 신호, 나답다는 느낌, 뒤처지지 않는 안도감이 선택을 밀어준다.";
+  }
+
+  return candidate.consumerBehaviorAngle;
+}
+
+export function inferNonObviousInsight(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "웰니스 앱의 다음 경쟁은 더 깊은 명상 콘텐츠가 아니라, 혼자 해야 하는 행동을 사회적 책임감으로 바꾸는 설계일 수 있다.";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return `이 사례에서 봐야 할 것은 '${candidate.topicName}'의 새 기능이 아니라, 사용자가 앱 밖의 생활 맥락에서 다시 앱을 떠올리게 만드는 순간이다.`;
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return "오프라인은 온라인의 반대가 아니라, 브랜드가 소비자의 확신을 빌리는 증거 장치가 되고 있다.";
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return "투자 유치보다 중요한 신호는 투자자가 본 시장의 크기가 아니라, 고객이 이미 감수하고 있는 비효율의 강도다.";
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return "트렌드는 새로움 때문에 퍼지는 것이 아니라, 사람들이 이미 느끼던 불편이나 욕망에 이름을 붙일 때 빠르게 설명 가능해진다.";
+  }
+
+  return `겉으로는 ${candidate.oneLineSummary}처럼 보이지만, 글에서는 '${candidate.coreWhyGudiQuestion}'에 답하는 행동 구조를 찾아야 한다.`;
+}
+
+export function inferSharpThesis(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "이 기능의 핵심은 명상을 더 잘하게 하는 것이 아니라, 명상을 계속하게 만드는 것일 수 있다.";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return `좋은 앱은 문제를 해결하는 데서 끝나지 않고, 사용자가 그 문제를 다시 방치하지 못하게 만드는 구조를 만든다.`;
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return "요즘 오프라인의 가치는 판매 면적이 아니라, 소비자가 브랜드를 믿어도 된다고 느끼는 장면을 만드는 데 있다.";
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return "이 스타트업 사례는 기술보다 먼저, 어떤 비효율이 이제 돈을 내고 해결할 만큼 불편해졌는지를 보여준다.";
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return "소비자 트렌드는 취향의 변화처럼 보이지만, 실제로는 사람들이 자신을 설명하는 방식을 바꾸는 사건에 가깝다.";
+  }
+
+  return `이 글의 주장은 '${candidate.topicName}'이 흥미롭다는 말이 아니라, 그 선택 뒤에 있는 소비자와 비즈니스의 압력을 드러내는 것이다.`;
+}
+
+export function inferGenericThesisToAvoid(candidate: ScoutCandidate): string[] {
+  const avoid = [
+    "소비자는 경험을 산다",
+    "커뮤니티가 중요하다",
+    "브랜드는 진정성이 필요하다"
   ];
+
+  if (candidate.category === "앱/프로덕트") {
+    avoid.unshift("앱이 생활 루틴으로 들어간다", "소비자는 습관에 돈을 쓴다");
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    avoid.unshift("오프라인 경험이 중요하다", "팝업은 MZ세대를 겨냥한다");
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    avoid.unshift("AI가 산업을 바꾼다", "시장이 빠르게 성장하고 있다");
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    avoid.unshift("요즘 소비자는 다르다", "개인화가 중요하다");
+  }
+
+  return [...new Set(avoid)];
+}
+
+export function inferBetterOpeningScene(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "혼자 명상하려고 앱을 켰는데, 첫 화면에서 오늘의 친구 체크인 여부가 먼저 보이는 장면으로 시작한다.";
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return `사용자가 '${candidate.topicName}'을 처음 발견하는 순간보다, 며칠 뒤 다시 앱을 켜게 되는 아주 작은 트리거에서 시작한다.`;
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return `사람들이 굳이 시간을 내서 '${candidate.topicName}' 앞에 서 있는 장면에서 시작하고, 그들이 무엇을 확인하러 왔는지 묻는다.`;
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return `투자 금액보다 먼저, 이 회사가 해결한다는 문제가 실제 현장에서 어떤 귀찮음으로 반복되는지 한 장면을 잡는다.`;
+  }
+
+  return `기사 제목을 요약하지 말고, '${candidate.coreWhyGudiQuestion}'이 떠오르는 사용자 행동 한 컷에서 시작한다.`;
+}
+
+export function inferEvidenceNeeded(candidate: ScoutCandidate): string[] {
+  const evidence = [
+    `원문 출처에서 '${candidate.topicName}'이 실제로 제공하거나 발표한 기능/실험의 정확한 범위 확인`,
+    "공식 페이지, 앱 화면, 보도자료 중 하나로 사실관계 재확인"
+  ];
+
+  if (isMeditationAccountabilityCase(candidate)) {
+    evidence.push(
+      "친구 체크인이 단순 공유인지, 실제 reminder/accountability 루프인지 확인",
+      "앱 화면이나 공식 설명에서 체크인 알림, streak, 친구 피드백 구조 확인"
+    );
+  } else if (candidate.category === "앱/프로덕트") {
+    evidence.push("retention, 알림, 기록, 공유 기능 중 어떤 장치가 있는지 앱 화면 기준으로 확인");
+  } else if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    evidence.push("오프라인 공간의 위치, 운영 기간, 방문 동선, 구매 전환 장치 확인");
+  } else if (candidate.category === "스타트업/투자") {
+    evidence.push("고객군, 수익 모델, 투자금 사용처, 실제 traction 관련 공개 근거 확인");
+  }
+
+  return evidence;
+}
+
+function postOutlineFor(candidate: ScoutCandidate): string[] {
+  return [
+    inferBetterOpeningScene(candidate),
+    `질문을 던진다: ${candidate.coreWhyGudiQuestion}`,
+    inferCoreTension(candidate),
+    inferBusinessMechanism(candidate),
+    inferConsumerPsychology(candidate),
+    inferSharpThesis(candidate)
+  ];
+}
+
+function possibleStructureFor(candidate: ScoutCandidate): string[] {
+  return postOutlineFor(candidate);
 }
 
 function counterArgumentsFor(candidate: ScoutCandidate): string[] {
@@ -121,12 +374,191 @@ export function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
     oneLineSummary: candidate.oneLineSummary,
     businessObservationAngle: candidate.businessObservationAngle,
     consumerBehaviorAngle: candidate.consumerBehaviorAngle,
+    coreTension: inferCoreTension(candidate),
+    nonObviousInsight: inferNonObviousInsight(candidate),
+    businessMechanism: inferBusinessMechanism(candidate),
+    consumerPsychology: inferConsumerPsychology(candidate),
+    sharpThesis: inferSharpThesis(candidate),
+    genericThesisToAvoid: inferGenericThesisToAvoid(candidate),
+    betterOpeningScene: inferBetterOpeningScene(candidate),
+    postOutline: postOutlineFor(candidate),
+    evidenceNeeded: inferEvidenceNeeded(candidate),
     possibleStructure: possibleStructureFor(candidate),
     counterArguments: counterArgumentsFor(candidate),
     sourceUrls: [candidate.sourceUrl],
     recommendedFormat: candidate.recommendedFormat,
-    styleReference: "olive-better"
+    styleReference: chooseStyleReference(candidate)
   };
+}
+
+type DeepBriefFields = Pick<
+  WritingBrief,
+  | "coreTension"
+  | "nonObviousInsight"
+  | "businessMechanism"
+  | "consumerPsychology"
+  | "sharpThesis"
+  | "genericThesisToAvoid"
+  | "betterOpeningScene"
+  | "postOutline"
+  | "evidenceNeeded"
+  | "styleReference"
+>;
+
+const styleReferences = new Set<WritingBriefStyleReference>([
+  "business-observation",
+  "product-observation",
+  "retail-observation",
+  "startup-observation",
+  "consumer-behavior-observation"
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: keyof DeepBriefFields): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function stringArrayFromRecord(record: Record<string, unknown>, key: keyof DeepBriefFields): string[] | undefined {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return items.length > 0 ? items.map((item) => item.trim()) : undefined;
+}
+
+function styleReferenceFromRecord(
+  record: Record<string, unknown>,
+  fallback: WritingBriefStyleReference
+): WritingBriefStyleReference {
+  const value = record.styleReference;
+  if (typeof value === "string" && styleReferences.has(value as WritingBriefStyleReference)) {
+    return value as WritingBriefStyleReference;
+  }
+
+  return fallback;
+}
+
+function mergeDeepBriefFields(base: WritingBrief, value: unknown): WritingBrief {
+  if (!isRecord(value)) {
+    return base;
+  }
+
+  return {
+    ...base,
+    coreTension: stringFromRecord(value, "coreTension") ?? base.coreTension,
+    nonObviousInsight: stringFromRecord(value, "nonObviousInsight") ?? base.nonObviousInsight,
+    businessMechanism: stringFromRecord(value, "businessMechanism") ?? base.businessMechanism,
+    consumerPsychology: stringFromRecord(value, "consumerPsychology") ?? base.consumerPsychology,
+    sharpThesis: stringFromRecord(value, "sharpThesis") ?? base.sharpThesis,
+    genericThesisToAvoid: stringArrayFromRecord(value, "genericThesisToAvoid") ?? base.genericThesisToAvoid,
+    betterOpeningScene: stringFromRecord(value, "betterOpeningScene") ?? base.betterOpeningScene,
+    postOutline: stringArrayFromRecord(value, "postOutline") ?? base.postOutline,
+    evidenceNeeded: stringArrayFromRecord(value, "evidenceNeeded") ?? base.evidenceNeeded,
+    possibleStructure: stringArrayFromRecord(value, "postOutline") ?? base.possibleStructure,
+    styleReference: styleReferenceFromRecord(value, base.styleReference)
+  };
+}
+
+function buildDeepBriefPrompt(candidate: ScoutCandidate): string {
+  return [
+    "너는 LinkedIn 글쓰기용 전략 편집자다.",
+    "최종 글을 쓰지 않는다. 선택된 소재를 더 날카로운 writing brief로 만든다.",
+    "뻔한 일반론을 금지한다. 모든 앱/브랜드에 붙을 수 있는 문장은 실패다.",
+    "반드시 이 사례에서만 나올 수 있는 tension, non-obvious insight, business mechanism, consumer psychology를 찾아라.",
+    "출처에 없는 사실은 invent하지 말고 evidenceNeeded로 분리해라.",
+    "학생 분석가가 쓸 수 있는 수준으로 표현하되, 인사이트는 얕으면 안 된다.",
+    "",
+    "아래 JSON key만 반환해라. Markdown 금지.",
+    "coreTension, nonObviousInsight, businessMechanism, consumerPsychology, sharpThesis, genericThesisToAvoid, betterOpeningScene, postOutline, evidenceNeeded, styleReference",
+    "styleReference는 business-observation, product-observation, retail-observation, startup-observation, consumer-behavior-observation 중 하나만 쓴다.",
+    "",
+    JSON.stringify(
+      {
+        id: candidate.id,
+        category: candidate.category,
+        topicName: candidate.topicName,
+        oneLineSummary: candidate.oneLineSummary,
+        coreWhyGudiQuestion: candidate.coreWhyGudiQuestion,
+        businessObservationAngle: candidate.businessObservationAngle,
+        consumerBehaviorAngle: candidate.consumerBehaviorAngle,
+        sourceName: candidate.sourceName,
+        sourceUrl: candidate.sourceUrl,
+        recommendedFormat: candidate.recommendedFormat
+      },
+      null,
+      2
+    )
+  ].join("\n");
+}
+
+async function requestDeepBriefFromLlm(candidate: ScoutCandidate): Promise<unknown | undefined> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return undefined;
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You create strategic writing briefs as strict JSON. You do not write final posts and you do not invent unsupported facts."
+        },
+        {
+          role: "user",
+          content: buildDeepBriefPrompt(candidate)
+        }
+      ],
+      response_format: { type: "json_object" }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`OpenAI deep brief request failed: ${response.status} ${await response.text()}`);
+  }
+
+  const body = (await response.json()) as unknown;
+  if (!isRecord(body)) {
+    return undefined;
+  }
+
+  const choices = body.choices;
+  if (!Array.isArray(choices) || !isRecord(choices[0])) {
+    return undefined;
+  }
+
+  const message = choices[0].message;
+  if (!isRecord(message) || typeof message.content !== "string") {
+    return undefined;
+  }
+
+  return JSON.parse(message.content) as unknown;
+}
+
+export async function toWritingBriefWithLlm(candidate: ScoutCandidate): Promise<WritingBrief> {
+  const fallback = toWritingBrief(candidate);
+
+  try {
+    const deepBrief = await requestDeepBriefFromLlm(candidate);
+    return mergeDeepBriefFields(fallback, deepBrief);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Deep brief LLM fallback for ${candidate.id}: ${message}\n`);
+    return fallback;
+  }
 }
 
 function renderList(items: string[]): string {
@@ -141,25 +573,45 @@ export function renderWritingBrief(brief: WritingBrief): string {
     "",
     brief.coreWhyGudiQuestion,
     "",
-    "## 한 줄 요약",
+    "## Core Tension",
     "",
-    brief.oneLineSummary,
+    brief.coreTension,
     "",
-    "## 비즈니스 관찰기 각도",
+    "## Sharp Thesis",
     "",
-    brief.businessObservationAngle,
+    brief.sharpThesis,
     "",
-    "## 소비자 행동 관점",
+    "## Non-obvious Insight",
     "",
-    brief.consumerBehaviorAngle,
+    brief.nonObviousInsight,
     "",
-    "## 가능한 구조",
+    "## Business Mechanism",
     "",
-    renderList(brief.possibleStructure),
+    brief.businessMechanism,
+    "",
+    "## Consumer Psychology",
+    "",
+    brief.consumerPsychology,
+    "",
+    "## Better Opening Scene",
+    "",
+    brief.betterOpeningScene,
+    "",
+    "## 글 구조",
+    "",
+    renderList(brief.postOutline),
+    "",
+    "## 피해야 할 뻔한 결론",
+    "",
+    renderList(brief.genericThesisToAvoid),
     "",
     "## 반론 / 조심할 점",
     "",
     renderList(brief.counterArguments),
+    "",
+    "## 필요한 추가 조사",
+    "",
+    renderList(brief.evidenceNeeded),
     "",
     "## 추천 포맷",
     "",
@@ -186,13 +638,13 @@ function slugifyFilePart(value: string): string {
 
 export async function writeWritingBriefForCandidate(
   candidate: ScoutCandidate,
-  options: { date?: string; outputDir?: string } = {}
+  options: { date?: string; outputDir?: string; useLlm?: boolean } = {}
 ): Promise<string> {
   const date = options.date ?? todayIsoDate();
   const outputDir = options.outputDir ?? DEFAULT_WRITING_BRIEF_OUTPUT_DIR;
   await mkdir(resolve(outputDir), { recursive: true });
 
-  const brief = toWritingBrief(candidate);
+  const brief = options.useLlm ? await toWritingBriefWithLlm(candidate) : toWritingBrief(candidate);
   const filename = `${date}-${slugifyFilePart(candidate.topicName)}.md`;
   const outputPath = resolve(join(outputDir, filename));
   await writeFile(outputPath, renderWritingBrief(brief), "utf8");
@@ -201,7 +653,7 @@ export async function writeWritingBriefForCandidate(
 
 export async function writeWritingBriefForCandidateId(
   candidateId: string,
-  options: { inputPath?: string; feedbackPath?: string; outputDir?: string; date?: string } = {}
+  options: { inputPath?: string; feedbackPath?: string; outputDir?: string; date?: string; useLlm?: boolean } = {}
 ): Promise<string | undefined> {
   const input = await readFile(resolve(options.inputPath ?? DEFAULT_INPUT_PATH), "utf8");
   const parsed: unknown = JSON.parse(input);
@@ -217,7 +669,8 @@ export async function writeWritingBriefForCandidateId(
 
   return writeWritingBriefForCandidate(candidate, {
     date: options.date,
-    outputDir: options.outputDir
+    outputDir: options.outputDir,
+    useLlm: options.useLlm
   });
 }
 
@@ -249,7 +702,8 @@ async function main(): Promise<void> {
   for (const candidate of selectedCandidates) {
     const outputPath = await writeWritingBriefForCandidate(candidate, {
       date: options.date,
-      outputDir: options.outputDir
+      outputDir: options.outputDir,
+      useLlm: options.useLlm
     });
     process.stdout.write(`Exported writing brief: ${outputPath}\n`);
   }
