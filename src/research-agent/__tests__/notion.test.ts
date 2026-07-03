@@ -30,7 +30,14 @@ const candidate: ScoutCandidate = {
   visitPossible: "확인 필요",
   sourceUrl: "https://example.com/source",
   sourceName: "테스트 출처",
-  nextAction: "채택 검토"
+  nextAction: "채택 검토",
+  entityName: "테스트 브랜드",
+  entityType: "brand",
+  observedFeature: "별도 매장",
+  evidenceSnippet: "테스트 근거",
+  evidenceType: "article",
+  verificationStatus: "verified",
+  verificationNotes: "테스트 검증"
 };
 
 describe("Notion payload mapping", () => {
@@ -48,6 +55,20 @@ describe("Notion payload mapping", () => {
           }
         }
       ]
+    });
+    expect(payload.properties["서비스/브랜드명"]).toEqual({
+      rich_text: [
+        {
+          text: {
+            content: "테스트 브랜드"
+          }
+        }
+      ]
+    });
+    expect(payload.properties["검증 상태"]).toEqual({
+      select: {
+        name: "verified"
+      }
     });
   });
 });

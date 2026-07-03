@@ -21,7 +21,20 @@ export type RawSourceItem = {
   country?: Country;
   sourceCategory: RawSourceCategory;
   collectedAt: string;
+  entityName?: string;
+  entityType?: EntityType;
+  observedFeature?: string;
+  evidenceSnippet?: string;
+  evidenceType?: EvidenceType;
+  verificationStatus?: VerificationStatus;
+  verificationNotes?: string;
 };
+
+export type EntityType = "service" | "brand" | "company" | "app" | "store" | "unknown";
+
+export type EvidenceType = "official" | "app-store" | "article" | "manual-observation" | "unknown";
+
+export type VerificationStatus = "verified" | "needs-research" | "rejected";
 
 export type CandidateStatus =
   | "new"
@@ -105,6 +118,13 @@ export type ScoutCandidate = {
   sourceUrl: string;
   sourceName: string;
   nextAction: NextAction;
+  entityName?: string;
+  entityType: EntityType;
+  observedFeature?: string;
+  evidenceSnippet?: string;
+  evidenceType: EvidenceType;
+  verificationStatus: VerificationStatus;
+  verificationNotes?: string;
 };
 
 export type CandidateEnrichment = {

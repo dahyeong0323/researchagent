@@ -110,6 +110,8 @@ Live writes require Notion environment variables and a Notion database whose pro
 
 The Notion database must include a `Candidate ID` rich text property. The agent writes `ScoutCandidate.id` there so future Telegram callbacks can find and update the same candidate.
 
+The database must also include verification fields: `서비스/브랜드명`, `관찰된 기능/변화`, `검증 상태`, `근거 스니펫`, `근거 유형`, and `검증 메모`. Candidates from sample URLs or without a real service, brand, company, app, or store name are marked `needs-research`.
+
 ## Telegram Notifications
 
 After a live Notion write, enable Telegram notifications to receive the saved Top 5 candidates with `Selected`, `Shortlisted`, and `Rejected` buttons:
@@ -118,7 +120,7 @@ After a live Notion write, enable Telegram notifications to receive the saved To
 npm run scout:notion -- --llm --limit 5
 ```
 
-Telegram buttons emit callback data such as `selected:<candidateId>` and `brief:<candidateId>`, which the local polling worker can process into Notion status updates or local writing brief files.
+Telegram buttons emit callback data such as `selected:<candidateId>` and `brief:<candidateId>`, which the local polling worker can process into Notion status updates or local writing brief files. Telegram summaries show `서비스/브랜드명` for verified candidates and mark unresolved items as `needs-research`.
 
 Run the local polling worker to process Telegram button clicks and update Notion candidate statuses:
 
@@ -169,6 +171,8 @@ npm run export:selected:llm
 ```
 
 The LLM pass sharpens the brief before it reaches the writing agent. It focuses on concrete tension, non-obvious insight, business mechanism, consumer psychology, weak theses to avoid, and evidence that still needs checking. If `OPENAI_API_KEY` is missing or the LLM call fails, the exporter falls back to the local rule-based v2 brief.
+
+Only `verified` candidates produce normal Writing Briefs. `needs-research` candidates produce Research Task Markdown instead, so the agent never invents a missing service or brand name.
 
 Generated briefs are written to:
 

@@ -179,8 +179,10 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
       return;
     }
 
-    const message = `Writing brief 생성 완료: ${outputPath}`;
-    await answerCallbackQuery(botToken, callbackQuery.id, "Writing brief 생성 완료");
+    const isResearchTask = outputPath.includes("research-task-");
+    const label = isResearchTask ? "Research task 생성 완료" : "Writing brief 생성 완료";
+    const message = `${label}: ${outputPath}`;
+    await answerCallbackQuery(botToken, callbackQuery.id, label);
     await sendTelegramMessage(message);
     info(message);
     return;

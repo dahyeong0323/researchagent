@@ -30,7 +30,10 @@ const candidate: ScoutCandidate = {
   visitPossible: "확인 필요",
   sourceUrl: "https://example.com/source",
   sourceName: "테스트 출처",
-  nextAction: "채택 검토"
+  nextAction: "채택 검토",
+  entityType: "brand",
+  evidenceType: "article",
+  verificationStatus: "verified"
 };
 
 describe("renderDailyScoutMarkdown", () => {

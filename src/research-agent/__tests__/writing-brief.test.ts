@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   chooseStyleReference,
   inferBusinessMechanism,
   inferGenericThesisToAvoid,
   renderWritingBrief,
-  toWritingBrief
+  toWritingBrief,
+  writeWritingBriefForCandidate
 } from "../export-to-writing.ts";
 import type { ScoutCandidate } from "../types.ts";
 
@@ -41,7 +45,14 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     visitPossible: overrides.visitPossible ?? "중요하지 않음",
     sourceUrl: overrides.sourceUrl ?? "https://example.com/meditation-checkin",
     sourceName: overrides.sourceName ?? "테스트 출처",
-    nextAction: overrides.nextAction ?? "채택 검토"
+    nextAction: overrides.nextAction ?? "채택 검토",
+    entityName: overrides.entityName ?? "테스트 명상 앱",
+    entityType: overrides.entityType ?? "app",
+    observedFeature: overrides.observedFeature ?? "친구 체크인",
+    evidenceSnippet: overrides.evidenceSnippet ?? "친구 체크인을 제공한다.",
+    evidenceType: overrides.evidenceType ?? "article",
+    verificationStatus: overrides.verificationStatus ?? "verified",
+    verificationNotes: overrides.verificationNotes
   };
 }
 
@@ -81,5 +92,27 @@ describe("Writing Brief v2", () => {
     expect(markdown).toContain("## Business Mechanism");
     expect(markdown).toContain("## 확인된 사실 / 추론 / 확인 필요");
     expect(markdown).toContain("## 필요한 추가 조사");
+  });
+
+  it("exports a research task instead of a normal writing brief for needs-research candidates", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "writing-brief-gate-"));
+
+    try {
+      const outputPath = await writeWritingBriefForCandidate(
+        candidate({
+          entityName: undefined,
+          verificationStatus: "needs-research",
+          verificationNotes: "Actual service name is missing."
+        }),
+        { outputDir, date: "2026-07-03" }
+      );
+      const markdown = await readFile(outputPath, "utf8");
+
+      expect(markdown).toContain("# Research Task:");
+      expect(markdown).not.toContain("# Writing Brief:");
+      expect(markdown).toContain("실제 서비스/브랜드명");
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
   });
 });

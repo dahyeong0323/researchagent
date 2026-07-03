@@ -843,6 +843,29 @@ function slugifyFilePart(value: string): string {
     .slice(0, 80);
 }
 
+export function renderResearchTask(candidate: ScoutCandidate): string {
+  return [
+    `# Research Task: ${candidate.topicName}`,
+    "",
+    "## 필요한 확인",
+    "",
+    "- 실제 서비스/브랜드명",
+    "- 공식 페이지 또는 기사 URL",
+    "- 기능이 실제로 존재하는지",
+    "- 앱 화면/제품 화면에서 어디에 노출되는지",
+    "",
+    "## 현재 후보",
+    "",
+    `- topicName: ${candidate.topicName}`,
+    `- sourceUrl: ${candidate.sourceUrl}`,
+    `- sourceName: ${candidate.sourceName}`,
+    `- oneLineSummary: ${candidate.oneLineSummary}`,
+    `- verificationStatus: ${candidate.verificationStatus}`,
+    `- verificationNotes: ${candidate.verificationNotes ?? ""}`,
+    ""
+  ].join("\n");
+}
+
 export async function writeWritingBriefForCandidate(
   candidate: ScoutCandidate,
   options: { date?: string; outputDir?: string; useLlm?: boolean } = {}
@@ -850,6 +873,14 @@ export async function writeWritingBriefForCandidate(
   const date = options.date ?? todayIsoDate();
   const outputDir = options.outputDir ?? DEFAULT_WRITING_BRIEF_OUTPUT_DIR;
   await mkdir(resolve(outputDir), { recursive: true });
+
+  if (candidate.verificationStatus !== "verified") {
+    process.stderr.write("Skipped writing brief: candidate requires real service/source verification.\n");
+    const filename = `${date}-research-task-${slugifyFilePart(candidate.topicName)}.md`;
+    const outputPath = resolve(join(outputDir, filename));
+    await writeFile(outputPath, renderResearchTask(candidate), "utf8");
+    return outputPath;
+  }
 
   const brief = options.useLlm ? await toWritingBriefWithLlm(candidate) : toWritingBrief(candidate);
   const filename = `${date}-${slugifyFilePart(candidate.topicName)}.md`;
@@ -912,7 +943,8 @@ async function main(): Promise<void> {
       outputDir: options.outputDir,
       useLlm: options.useLlm
     });
-    process.stdout.write(`Exported writing brief: ${outputPath}\n`);
+    const label = outputPath.includes("research-task-") ? "Exported research task" : "Exported writing brief";
+    process.stdout.write(`${label}: ${outputPath}\n`);
   }
 }
 

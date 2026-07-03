@@ -32,7 +32,13 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     visitPossible: "확인 필요",
     sourceUrl: "https://example.com/source",
     sourceName: "테스트 출처",
-    nextAction: "채택 검토"
+    nextAction: "채택 검토",
+    entityName: overrides.entityName,
+    entityType: overrides.entityType ?? "unknown",
+    observedFeature: overrides.observedFeature,
+    evidenceType: overrides.evidenceType ?? "unknown",
+    verificationStatus: overrides.verificationStatus ?? "needs-research",
+    verificationNotes: overrides.verificationNotes
   };
 }
 
@@ -41,9 +47,26 @@ describe("Telegram daily notification", () => {
     const summary = renderTelegramDailySummary([candidate()]);
 
     expect(summary).toContain("오늘 LinkedIn 소재 후보 1개를 Notion에 저장했습니다.");
-    expect(summary).toContain("[91점] 테스트 리테일 후보");
+    expect(summary).toContain("[보류] 테스트 리테일 후보");
     expect(summary).toContain("카테고리: 리테일/브랜드");
+    expect(summary).toContain("검증 상태: needs-research");
     expect(summary).toContain("왜 굳이?: 왜 굳이 이 브랜드는 별도 매장을 만들었을까?");
+  });
+
+  it("renders entity name for verified candidates", () => {
+    const summary = renderTelegramDailySummary([
+      candidate({
+        entityName: "Headspace",
+        entityType: "app",
+        observedFeature: "친구 체크인 기능",
+        evidenceType: "official",
+        verificationStatus: "verified"
+      })
+    ]);
+
+    expect(summary).toContain("[91점] Headspace — 친구 체크인 기능");
+    expect(summary).toContain("서비스/브랜드: Headspace");
+    expect(summary).toContain("검증 상태: verified");
   });
 
   it("builds Selected, Shortlisted, and Rejected callback buttons with the candidate id", () => {

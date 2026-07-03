@@ -76,10 +76,21 @@ export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string
   const lines = [`오늘 LinkedIn 소재 후보 ${candidates.length}개를 Notion에 저장했습니다.`, "", "Top 5 후보"];
 
   topCandidates.forEach((candidate, index) => {
+    const title =
+      candidate.verificationStatus === "verified" && candidate.entityName
+        ? `${candidate.entityName} — ${candidate.observedFeature ?? candidate.topicName}`
+        : `[보류] ${candidate.topicName}`;
+
     lines.push(
       "",
-      `${index + 1}. [${candidate.score}점] ${candidate.topicName}`,
+      candidate.verificationStatus === "verified"
+        ? `${index + 1}. [${candidate.score}점] ${title}`
+        : `${index + 1}. ${title}`,
       `카테고리: ${candidate.category}`,
+      `검증 상태: ${candidate.verificationStatus}`,
+      ...(candidate.verificationStatus === "verified" && candidate.entityName
+        ? [`서비스/브랜드: ${candidate.entityName}`]
+        : ["필요: 실제 서비스명과 공식/기사 출처 확인"]),
       `왜 굳이?: ${candidate.coreWhyGudiQuestion}`
     );
   });

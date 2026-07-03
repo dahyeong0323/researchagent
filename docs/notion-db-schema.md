@@ -70,6 +70,12 @@ npm.cmd run export:selected -- --feedback data/research-agent/feedback.notion.js
 | 피드백 라벨 | Multi-select |
 | 점수 | Number |
 | 카테고리 | Select |
+| 서비스/브랜드명 | Text / Rich text |
+| 관찰된 기능/변화 | Text / Rich text |
+| 검증 상태 | Select |
+| 근거 스니펫 | Text / Rich text |
+| 근거 유형 | Select |
+| 검증 메모 | Text / Rich text |
 | 한 줄 요약 | Text / Rich text |
 | 핵심 왜 굳이 질문 | Text / Rich text |
 | 비즈니스 관찰기 각도 | Text / Rich text |
@@ -92,6 +98,20 @@ npm.cmd run export:selected -- --feedback data/research-agent/feedback.notion.js
 - Written
 - Published
 - Rejected
+
+검증 상태:
+
+- verified
+- needs-research
+- rejected
+
+근거 유형:
+
+- official
+- app-store
+- article
+- manual-observation
+- unknown
 
 카테고리:
 

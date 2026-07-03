@@ -4,6 +4,7 @@ import { dedupeCandidates } from "./dedupe.ts";
 import { renderDailyScoutMarkdown } from "./daily-output.ts";
 import { applyEnrichment, enrichCandidateWithLlm } from "./llm.ts";
 import { overlapRiskFor, scoreCandidate } from "./score.ts";
+import { applyVerificationToCandidate, verifySourceItem } from "./verification.ts";
 import {
   generateBusinessObservationAngle,
   generateConnectionToExistingPosts,
@@ -55,7 +56,7 @@ export function processRawCandidates(
       const { score, scoreBreakdown } = scoreCandidate(item, category, memory);
       const visitPossible = VISIT_POSSIBLE_BY_CATEGORY[category];
 
-      return {
+      const candidate: ScoutCandidate = {
         id: item.id ?? item.sourceUrl,
         discoveredDate: item.collectedAt.slice(0, 10),
         status: "new",
@@ -74,8 +75,13 @@ export function processRawCandidates(
         visitPossible,
         sourceUrl: item.sourceUrl,
         sourceName: item.sourceName,
-        nextAction: nextActionFor(score, visitPossible)
+        nextAction: nextActionFor(score, visitPossible),
+        entityType: "unknown",
+        evidenceType: "unknown",
+        verificationStatus: "needs-research"
       };
+
+      return applyVerificationToCandidate(candidate, verifySourceItem(item));
     })
     .sort((left, right) => right.score - left.score || left.topicName.localeCompare(right.topicName))
     .slice(0, limit);
