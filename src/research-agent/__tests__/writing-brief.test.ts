@@ -49,10 +49,17 @@ describe("Writing Brief v2", () => {
   it("turns a meditation app friend check-in candidate into a product retention brief", () => {
     const meditationCandidate = candidate();
     const mechanism = inferBusinessMechanism(meditationCandidate).toLowerCase();
+    const brief = toWritingBrief(meditationCandidate);
 
     expect(["retention", "habit", "accountability"].some((keyword) => mechanism.includes(keyword))).toBe(true);
     expect(inferGenericThesisToAvoid(meditationCandidate)).toContain("앱이 생활 루틴으로 들어간다");
     expect(chooseStyleReference(meditationCandidate)).toBe("product-observation");
+    expect(brief.refinedCoreQuestion.length).toBeLessThan(brief.coreWhyGudiQuestion.length);
+    expect(brief.refinedCoreQuestion).not.toContain("기능 제공을 넘어");
+    expect(brief.refinedCoreQuestion).toMatch(/명상/);
+    expect(brief.refinedCoreQuestion).toMatch(/친구|체크인/);
+    expect(brief.postOutline.length).toBeGreaterThanOrEqual(7);
+    expect(brief.evidenceBoundary.needsVerification.some((item) => item.includes("앱 화면"))).toBe(true);
   });
 
   it("uses a retail style reference for retail candidates", () => {
@@ -72,6 +79,7 @@ describe("Writing Brief v2", () => {
     expect(markdown).toContain("## Core Tension");
     expect(markdown).toContain("## Sharp Thesis");
     expect(markdown).toContain("## Business Mechanism");
+    expect(markdown).toContain("## 확인된 사실 / 추론 / 확인 필요");
     expect(markdown).toContain("## 필요한 추가 조사");
   });
 });

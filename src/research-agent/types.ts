@@ -147,6 +147,7 @@ export type WritingBriefStyleReference =
 export type WritingBrief = {
   topicName: string;
   coreWhyGudiQuestion: string;
+  refinedCoreQuestion: string;
   oneLineSummary: string;
   businessObservationAngle: string;
   consumerBehaviorAngle: string;
@@ -159,6 +160,11 @@ export type WritingBrief = {
   betterOpeningScene: string;
   postOutline: string[];
   evidenceNeeded: string[];
+  evidenceBoundary: {
+    confirmedFacts: string[];
+    reasonableInferences: string[];
+    needsVerification: string[];
+  };
   possibleStructure: string[];
   counterArguments: string[];
   sourceUrls: string[];

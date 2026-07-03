@@ -127,6 +127,73 @@ function isMeditationAccountabilityCase(candidate: ScoutCandidate): boolean {
   );
 }
 
+function isUnverifiedSource(candidate: ScoutCandidate): boolean {
+  return candidate.sourceName === "샘플 수동 입력" || candidate.sourceUrl.includes("example.com");
+}
+
+function stripGenericQuestionLanguage(value: string): string {
+  return value
+    .replace(/기능 제공을 넘어/g, "")
+    .replace(/생활 루틴 안으로 들어가려는/g, "")
+    .replace(/흐름으로 해석할 수 있다/g, "")
+    .replace(/소비자는\s+[^?。.!]*하기 시작한다/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactTopicName(candidate: ScoutCandidate): string {
+  return candidate.topicName
+    .replace(/하는 선택/g, "")
+    .replace(/강조하는/g, "강조")
+    .replace(/운영하는/g, "운영")
+    .replace(/확대하는/g, "확대")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function inferRefinedCoreQuestion(candidate: ScoutCandidate): string {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return "명상은 원래 혼자 하는데, 왜 친구 체크인을 앞세울까?";
+  }
+
+  if (hasAny(candidate, ["중고거래", "검수", "팝업"])) {
+    return "왜 중고거래 플랫폼은 오프라인 검수까지 열까?";
+  }
+
+  if (hasAny(candidate, ["다이소", "뷰티"])) {
+    return "왜 다이소는 뷰티를 따로 보이게 할까?";
+  }
+
+  if (hasAny(candidate, ["olive better", "웰니스", "오프라인 매장"])) {
+    return "왜 웰니스는 따로 매장이 필요했을까?";
+  }
+
+  if (hasAny(candidate, ["베이커리", "구독", "픽업"])) {
+    return "왜 동네 빵집은 구독 픽업 선반을 만들까?";
+  }
+
+  const compactTopic = compactTopicName(candidate);
+
+  if (candidate.category === "앱/프로덕트") {
+    return `${compactTopic}은 왜 반복 사용을 먼저 설계할까?`;
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return `${compactTopic}은 왜 굳이 오프라인 장면을 만들까?`;
+  }
+
+  if (candidate.category === "스타트업/투자") {
+    return `${compactTopic}은 어떤 불편에 돈이 몰린 걸까?`;
+  }
+
+  if (candidate.category === "소비자 트렌드") {
+    return `${compactTopic}은 어떤 마음을 건드린 걸까?`;
+  }
+
+  const cleaned = stripGenericQuestionLanguage(candidate.coreWhyGudiQuestion);
+  return cleaned.length > 0 ? cleaned : `${compactTopic}은 왜 지금 흥미로운 걸까?`;
+}
+
 export function chooseStyleReference(candidate: ScoutCandidate): WritingBriefStyleReference {
   if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
     return "retail-observation";
@@ -295,14 +362,18 @@ export function inferGenericThesisToAvoid(candidate: ScoutCandidate): string[] {
 
 export function inferBetterOpeningScene(candidate: ScoutCandidate): string {
   if (isMeditationAccountabilityCase(candidate)) {
-    return "혼자 명상하려고 앱을 켰는데, 첫 화면에서 오늘의 친구 체크인 여부가 먼저 보이는 장면으로 시작한다.";
+    return "실제 화면에서 친구 체크인이 개인 세션보다 더 잘 보이는 위치에 있다면, 그 장면에서 시작한다.";
   }
 
   if (candidate.category === "앱/프로덕트") {
-    return `사용자가 '${candidate.topicName}'을 처음 발견하는 순간보다, 며칠 뒤 다시 앱을 켜게 되는 아주 작은 트리거에서 시작한다.`;
+    return `앱 화면에서 반복 사용을 유도하는 장치가 확인되면, 사용자가 며칠 뒤 다시 '${candidate.topicName}'을 켜는 장면에서 시작한다.`;
   }
 
   if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    if (isUnverifiedSource(candidate)) {
+      return `실제 매장 사진이나 방문 동선이 확인되면, 사람들이 굳이 '${candidate.topicName}' 앞에 서 있는 장면에서 시작한다.`;
+    }
+
     return `사람들이 굳이 시간을 내서 '${candidate.topicName}' 앞에 서 있는 장면에서 시작하고, 그들이 무엇을 확인하러 왔는지 묻는다.`;
   }
 
@@ -335,13 +406,85 @@ export function inferEvidenceNeeded(candidate: ScoutCandidate): string[] {
   return evidence;
 }
 
-function postOutlineFor(candidate: ScoutCandidate): string[] {
-  return [
-    inferBetterOpeningScene(candidate),
-    `질문을 던진다: ${candidate.coreWhyGudiQuestion}`,
+export function inferEvidenceBoundary(candidate: ScoutCandidate): WritingBrief["evidenceBoundary"] {
+  const confirmedFacts = [
+    `입력 출처는 '${candidate.topicName}'을 소재 후보로 제시한다.`,
+    `출처 요약: ${candidate.oneLineSummary}`
+  ];
+
+  const reasonableInferences = [
     inferCoreTension(candidate),
     inferBusinessMechanism(candidate),
+    inferConsumerPsychology(candidate)
+  ];
+
+  const needsVerification = inferEvidenceNeeded(candidate);
+
+  if (candidate.category === "앱/프로덕트") {
+    needsVerification.push("실제 앱 화면에서 기능 위치와 노출 우선순위 확인");
+  }
+
+  if (isUnverifiedSource(candidate)) {
+    needsVerification.push("현재 후보가 샘플/수동 입력 기반이면 실제 공개 출처로 교체");
+  }
+
+  return {
+    confirmedFacts: [...new Set(confirmedFacts)],
+    reasonableInferences: [...new Set(reasonableInferences)],
+    needsVerification: [...new Set(needsVerification)]
+  };
+}
+
+function postOutlineFor(candidate: ScoutCandidate): string[] {
+  if (isMeditationAccountabilityCase(candidate)) {
+    return [
+      "명상 앱은 혼자 조용히 쓰는 앱이라고 생각했다.",
+      "그런데 이 후보는 개인 세션보다 친구 체크인을 더 앞세우는 선택을 보여준다.",
+      "처음엔 이상하다. 명상에 왜 친구가 필요하지?",
+      "생각해보면 명상 앱의 진짜 문제는 콘텐츠 부족이 아니라 이탈일 수 있다.",
+      "혼자 하는 명상은 쉽게 미뤄지지만, 친구가 확인하면 작은 약속이 된다.",
+      "그래서 이 기능은 명상을 더 잘하게 하는 기능이라기보다 명상을 계속하게 만드는 retention 장치일 수 있다.",
+      "다만 너무 소셜해지면 명상의 본질인 개인적 고요함과 충돌할 수도 있다.",
+      "결국 이 실험은 웰니스 앱이 콘텐츠 앱에서 습관 설계 제품으로 이동하는 장면일 수 있다."
+    ];
+  }
+
+  if (candidate.category === "앱/프로덕트") {
+    return [
+      `처음에는 '${candidate.topicName}'을 단순한 새 기능 소식처럼 본다.`,
+      "그런데 앱에서 중요한 것은 기능이 있다는 사실보다 사용자가 다시 돌아오는 이유다.",
+      `여기서 질문은 '${inferRefinedCoreQuestion(candidate)}'로 좁혀진다.`,
+      "사용자는 좋은 기능을 발견해도 바쁘면 금방 잊는다.",
+      "그래서 앱은 알림, 기록, 공유, 보상 같은 장치로 행동을 다시 불러와야 한다.",
+      inferBusinessMechanism(candidate),
+      inferConsumerPsychology(candidate),
+      "다만 실제 화면과 사용 흐름을 확인하기 전까지는 전략을 단정하지 않는다.",
+      inferSharpThesis(candidate)
+    ];
+  }
+
+  if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
+    return [
+      `처음에는 '${candidate.topicName}'을 또 하나의 오프라인 이벤트처럼 볼 수 있다.`,
+      "그런데 굳이 공간을 만들었다면, 그 공간은 판매 이상의 역할을 해야 한다.",
+      `질문은 '${inferRefinedCoreQuestion(candidate)}'로 좁혀진다.`,
+      "온라인에서는 가격과 정보가 빠르지만, 신뢰와 확신은 여전히 장면을 필요로 한다.",
+      "사람들은 제품을 보러 가는 동시에 내가 왜 이 브랜드를 믿어도 되는지 확인한다.",
+      inferBusinessMechanism(candidate),
+      "다만 방문 동선, 운영 기간, 실제 구매 전환은 아직 확인해야 한다.",
+      inferSharpThesis(candidate)
+    ];
+  }
+
+  return [
+    `먼저 '${candidate.topicName}'을 뉴스가 아니라 한 사람의 선택 장면으로 바꿔 본다.`,
+    `질문은 '${inferRefinedCoreQuestion(candidate)}'로 좁힌다.`,
+    inferCoreTension(candidate),
+    "그 다음 이 선택이 쉬운 선택인지, 불편을 감수하는 선택인지 따져 본다.",
+    inferBusinessMechanism(candidate),
     inferConsumerPsychology(candidate),
+    "출처에 없는 성과나 내부 전략은 확인 필요로 남긴다.",
+    "반론이 되는 지점을 먼저 적어 과한 해석을 줄인다.",
     inferSharpThesis(candidate)
   ];
 }
@@ -371,6 +514,7 @@ export function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
   return {
     topicName: candidate.topicName,
     coreWhyGudiQuestion: candidate.coreWhyGudiQuestion,
+    refinedCoreQuestion: inferRefinedCoreQuestion(candidate),
     oneLineSummary: candidate.oneLineSummary,
     businessObservationAngle: candidate.businessObservationAngle,
     consumerBehaviorAngle: candidate.consumerBehaviorAngle,
@@ -383,6 +527,7 @@ export function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
     betterOpeningScene: inferBetterOpeningScene(candidate),
     postOutline: postOutlineFor(candidate),
     evidenceNeeded: inferEvidenceNeeded(candidate),
+    evidenceBoundary: inferEvidenceBoundary(candidate),
     possibleStructure: possibleStructureFor(candidate),
     counterArguments: counterArgumentsFor(candidate),
     sourceUrls: [candidate.sourceUrl],
@@ -394,6 +539,7 @@ export function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
 type DeepBriefFields = Pick<
   WritingBrief,
   | "coreTension"
+  | "refinedCoreQuestion"
   | "nonObviousInsight"
   | "businessMechanism"
   | "consumerPsychology"
@@ -402,6 +548,7 @@ type DeepBriefFields = Pick<
   | "betterOpeningScene"
   | "postOutline"
   | "evidenceNeeded"
+  | "evidenceBoundary"
   | "styleReference"
 >;
 
@@ -432,6 +579,16 @@ function stringArrayFromRecord(record: Record<string, unknown>, key: keyof DeepB
   return items.length > 0 ? items.map((item) => item.trim()) : undefined;
 }
 
+function stringArrayFromKey(record: Record<string, unknown>, key: string): string[] | undefined {
+  const value = record[key];
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const items = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return items.length > 0 ? items.map((item) => item.trim()) : undefined;
+}
+
 function styleReferenceFromRecord(
   record: Record<string, unknown>,
   fallback: WritingBriefStyleReference
@@ -444,13 +601,42 @@ function styleReferenceFromRecord(
   return fallback;
 }
 
+function evidenceBoundaryFromRecord(
+  record: Record<string, unknown>,
+  fallback: WritingBrief["evidenceBoundary"]
+): WritingBrief["evidenceBoundary"] {
+  const value = record.evidenceBoundary;
+  if (!isRecord(value)) {
+    return fallback;
+  }
+
+  return {
+    confirmedFacts: stringArrayFromKey(value, "confirmedFacts") ?? fallback.confirmedFacts,
+    reasonableInferences: stringArrayFromKey(value, "reasonableInferences") ?? fallback.reasonableInferences,
+    needsVerification: stringArrayFromKey(value, "needsVerification") ?? fallback.needsVerification
+  };
+}
+
+function normalizeBriefQuality(brief: WritingBrief): WritingBrief {
+  const refinedCoreQuestion = stripGenericQuestionLanguage(brief.refinedCoreQuestion);
+  const postOutline = brief.postOutline.length >= 7 ? brief.postOutline : brief.possibleStructure;
+
+  return {
+    ...brief,
+    refinedCoreQuestion: refinedCoreQuestion.length > 0 ? refinedCoreQuestion : brief.coreWhyGudiQuestion,
+    postOutline: postOutline.length >= 7 ? postOutline : brief.postOutline,
+    possibleStructure: postOutline.length >= 7 ? postOutline : brief.possibleStructure
+  };
+}
+
 function mergeDeepBriefFields(base: WritingBrief, value: unknown): WritingBrief {
   if (!isRecord(value)) {
     return base;
   }
 
-  return {
+  return normalizeBriefQuality({
     ...base,
+    refinedCoreQuestion: stringFromRecord(value, "refinedCoreQuestion") ?? base.refinedCoreQuestion,
     coreTension: stringFromRecord(value, "coreTension") ?? base.coreTension,
     nonObviousInsight: stringFromRecord(value, "nonObviousInsight") ?? base.nonObviousInsight,
     businessMechanism: stringFromRecord(value, "businessMechanism") ?? base.businessMechanism,
@@ -460,9 +646,10 @@ function mergeDeepBriefFields(base: WritingBrief, value: unknown): WritingBrief 
     betterOpeningScene: stringFromRecord(value, "betterOpeningScene") ?? base.betterOpeningScene,
     postOutline: stringArrayFromRecord(value, "postOutline") ?? base.postOutline,
     evidenceNeeded: stringArrayFromRecord(value, "evidenceNeeded") ?? base.evidenceNeeded,
+    evidenceBoundary: evidenceBoundaryFromRecord(value, base.evidenceBoundary),
     possibleStructure: stringArrayFromRecord(value, "postOutline") ?? base.possibleStructure,
     styleReference: styleReferenceFromRecord(value, base.styleReference)
-  };
+  });
 }
 
 function buildDeepBriefPrompt(candidate: ScoutCandidate): string {
@@ -473,9 +660,15 @@ function buildDeepBriefPrompt(candidate: ScoutCandidate): string {
     "반드시 이 사례에서만 나올 수 있는 tension, non-obvious insight, business mechanism, consumer psychology를 찾아라.",
     "출처에 없는 사실은 invent하지 말고 evidenceNeeded로 분리해라.",
     "학생 분석가가 쓸 수 있는 수준으로 표현하되, 인사이트는 얕으면 안 된다.",
+    "핵심 질문은 refinedCoreQuestion에 20~35자 내외의 자연스러운 한국어 질문으로 다시 써라.",
+    "postOutline은 모든 섹션을 반복하지 말고 실제 LinkedIn 글의 전개처럼 7~9개 bullet로 써라.",
+    "확인된 사실과 추론을 evidenceBoundary.confirmedFacts, evidenceBoundary.reasonableInferences, evidenceBoundary.needsVerification로 분리해라.",
+    "출처에 없는 화면, 성과, 내부 전략, 유저 반응을 단정하지 마라.",
+    "'기능 제공을 넘어', '생활 루틴', '흐름으로 해석', '소비자는 ~하기 시작한다' 같은 일반론 문장을 피하라.",
     "",
     "아래 JSON key만 반환해라. Markdown 금지.",
-    "coreTension, nonObviousInsight, businessMechanism, consumerPsychology, sharpThesis, genericThesisToAvoid, betterOpeningScene, postOutline, evidenceNeeded, styleReference",
+    "refinedCoreQuestion, coreTension, nonObviousInsight, businessMechanism, consumerPsychology, sharpThesis, genericThesisToAvoid, betterOpeningScene, postOutline, evidenceNeeded, evidenceBoundary, styleReference",
+    "evidenceBoundary는 confirmedFacts, reasonableInferences, needsVerification 배열을 가진 객체다.",
     "styleReference는 business-observation, product-observation, retail-observation, startup-observation, consumer-behavior-observation 중 하나만 쓴다.",
     "",
     JSON.stringify(
@@ -571,7 +764,7 @@ export function renderWritingBrief(brief: WritingBrief): string {
     "",
     "## 핵심 질문",
     "",
-    brief.coreWhyGudiQuestion,
+    brief.refinedCoreQuestion || brief.coreWhyGudiQuestion,
     "",
     "## Core Tension",
     "",
@@ -596,6 +789,20 @@ export function renderWritingBrief(brief: WritingBrief): string {
     "## Better Opening Scene",
     "",
     brief.betterOpeningScene,
+    "",
+    "## 확인된 사실 / 추론 / 확인 필요",
+    "",
+    "### 확인된 사실",
+    "",
+    renderList(brief.evidenceBoundary.confirmedFacts),
+    "",
+    "### 합리적 추론",
+    "",
+    renderList(brief.evidenceBoundary.reasonableInferences),
+    "",
+    "### 확인 필요",
+    "",
+    renderList(brief.evidenceBoundary.needsVerification),
     "",
     "## 글 구조",
     "",
