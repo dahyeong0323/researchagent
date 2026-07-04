@@ -5,6 +5,7 @@ export type ParsedHtmlDocument = {
   canonicalUrl: string;
   title: string;
   siteName: string;
+  description?: string;
   publishedAt?: string;
   contentText: string;
   paragraphs: SourceParagraph[];
@@ -35,6 +36,18 @@ function firstMatch(html: string, patterns: RegExp[]): string | undefined {
   return undefined;
 }
 
+function absolutizeUrl(value: string | undefined, sourceUrl: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return new URL(value, sourceUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 function extractParagraphs(html: string): SourceParagraph[] {
   const candidates = [...html.matchAll(/<(p|li|h1|h2|h3)\b[^>]*>([\s\S]*?)<\/\1>/gi)]
     .map((match) => normalizeWhitespace(stripTags(match[2] ?? "")))
@@ -47,8 +60,18 @@ function extractParagraphs(html: string): SourceParagraph[] {
   }));
 }
 
+function readableHtmlRegion(html: string): string {
+  return (
+    firstMatch(html, [
+      /<article\b[^>]*>([\s\S]*?)<\/article>/i,
+      /<main\b[^>]*>([\s\S]*?)<\/main>/i,
+      /<body\b[^>]*>([\s\S]*?)<\/body>/i
+    ]) ?? html
+  );
+}
+
 function fallbackBodyText(html: string): string {
-  const body = firstMatch(html, [/<body\b[^>]*>([\s\S]*?)<\/body>/i]) ?? html;
+  const body = readableHtmlRegion(html);
   return normalizeWhitespace(stripTags(body));
 }
 
@@ -58,7 +81,13 @@ export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDo
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
 
   const canonicalUrl =
-    firstMatch(cleanedHtml, [/<link\b[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*>/i]) ?? sourceUrl;
+    absolutizeUrl(
+      firstMatch(cleanedHtml, [
+        /<link\b[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*>/i,
+        /<meta\b[^>]*property=["']og:url["'][^>]*content=["']([^"']+)["'][^>]*>/i
+      ]),
+      sourceUrl
+    ) ?? sourceUrl;
   const title =
     firstMatch(cleanedHtml, [
       /<meta\b[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["'][^>]*>/i,
@@ -70,15 +99,22 @@ export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDo
       /<meta\b[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["'][^>]*>/i,
       /<meta\b[^>]*name=["']application-name["'][^>]*content=["']([^"']+)["'][^>]*>/i
     ]) ?? new URL(sourceUrl).hostname;
+  const description = firstMatch(cleanedHtml, [
+    /<meta\b[^>]*name=["']description["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+    /<meta\b[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["'][^>]*>/i
+  ]);
   const publishedAt = firstMatch(cleanedHtml, [
     /<meta\b[^>]*property=["']article:published_time["'][^>]*content=["']([^"']+)["'][^>]*>/i,
     /<meta\b[^>]*name=["']date["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+    /<meta\b[^>]*name=["']pubdate["'][^>]*content=["']([^"']+)["'][^>]*>/i,
+    /<meta\b[^>]*name=["']publishdate["'][^>]*content=["']([^"']+)["'][^>]*>/i,
     /<time\b[^>]*datetime=["']([^"']+)["'][^>]*>/i
   ]);
 
-  const paragraphs = extractParagraphs(cleanedHtml);
+  const readableRegion = readableHtmlRegion(cleanedHtml);
+  const paragraphs = extractParagraphs(readableRegion);
   const contentText =
-    paragraphs.length > 0 ? paragraphs.map((paragraph) => paragraph.text).join("\n\n") : fallbackBodyText(cleanedHtml);
+    paragraphs.length > 0 ? paragraphs.map((paragraph) => paragraph.text).join("\n\n") : fallbackBodyText(readableRegion);
 
   if (normalizeWhitespace(contentText).length === 0) {
     throw new Error("Parsed HTML did not contain readable text.");
@@ -88,6 +124,7 @@ export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDo
     canonicalUrl,
     title: normalizeWhitespace(title),
     siteName: normalizeWhitespace(siteName),
+    description: description ? normalizeWhitespace(description) : undefined,
     publishedAt,
     contentText,
     paragraphs

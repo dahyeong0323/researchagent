@@ -57,10 +57,38 @@ describe("manual URL collector", () => {
     expect(result.rawSourceItem.title).toBe("Acme Beauty opens a refill station pop-up");
     expect(result.rawSourceItem.sourceUrl).toBe("https://news.example.org/acme-beauty-refill-popup");
     expect(result.sourceDocument.siteName).toBe("Example Retail News");
+    expect(result.sourceDocument.description).toContain("Acme Beauty");
+    expect(result.sourceDocument.collectorType).toBe("manual-url");
+    expect(result.sourceDocument.sourceUrl).toBe("https://news.example.org/acme");
+    expect(result.sourceDocument.fetchStatus).toBe("success");
     expect(result.sourceDocument.contentText).toContain("refill station pop-up");
     expect(result.sourceDocument.paragraphs.length).toBeGreaterThanOrEqual(2);
     expect(result.rawSourceItem.fetchStatus).toBe("success");
     expect(result.rawSourceItem.parseStatus).toBe("success");
+  });
+
+  it("falls back to readable body text when article tags are absent", async () => {
+    const html = [
+      "<html>",
+      "<head>",
+      "<meta property=\"og:url\" content=\"/body-only\">",
+      "<meta name=\"description\" content=\"Body fallback description\">",
+      "<title>Body fallback article</title>",
+      "</head>",
+      "<body>",
+      "<div>Acme Beauty introduced a refill station pilot without an article wrapper.</div>",
+      "</body>",
+      "</html>"
+    ].join("");
+
+    const result = await collectManualUrl("https://news.example.org/input", {
+      fetchImpl: fetchHtml(html),
+      now: new Date("2026-07-04T00:00:00.000Z")
+    });
+
+    expect(result.sourceDocument.canonicalUrl).toBe("https://news.example.org/body-only");
+    expect(result.sourceDocument.description).toBe("Body fallback description");
+    expect(result.sourceDocument.contentText).toContain("introduced a refill station pilot");
   });
 
   it("rejects LinkedIn URLs", async () => {

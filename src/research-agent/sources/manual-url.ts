@@ -75,17 +75,26 @@ export async function collectManualUrl(
   const documentId = `manual-url:${checksum(parsed.canonicalUrl).slice(0, 16)}`;
 
   const sourceDocument: SourceDocument = {
+    id: documentId,
     documentId,
     sourceItemId: documentId,
+    collectorType: "manual-url",
+    sourceUrl: url.toString(),
     canonicalUrl: parsed.canonicalUrl,
     documentType: "manual-url",
     title: parsed.title,
+    description: parsed.description,
     publishedAt: parsed.publishedAt,
     siteName: parsed.siteName,
     siteType: "public-web",
     contentText: parsed.contentText,
     paragraphs: parsed.paragraphs,
+    sourceCategory: "manual",
+    collectedAt: fetchedAt,
+    language: "unknown",
+    country: "UNKNOWN",
     reliabilityTier: 3,
+    fetchStatus: "success",
     fetchChecksum: checksum(html),
     fetchedAt
   };

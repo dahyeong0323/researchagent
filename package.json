@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "scout:local": "tsx src/research-agent/index.ts",
-    "scout:url": "tsx src/research-agent/index.ts",
+    "scout:url": "tsx src/research-agent/index.ts --url",
     "scout:local:llm": "tsx src/research-agent/index.ts --llm",
     "scout:notion": "tsx src/research-agent/index.ts --notion",
     "scout:feedback": "tsx src/research-agent/index.ts --feedback data/research-agent/feedback.sample.json",

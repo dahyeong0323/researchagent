@@ -79,18 +79,28 @@ export type SourceParagraph = {
 };
 
 export type SourceDocument = {
+  id?: string;
   documentId: string;
   sourceItemId?: string;
+  collectorType?: CollectorType;
+  sourceUrl?: string;
   canonicalUrl: string;
   documentType: CollectorType;
   title: string;
+  description?: string;
   publishedAt?: string;
   siteName: string;
   siteType?: string;
   contentText: string;
   contentMarkdown?: string;
   paragraphs: SourceParagraph[];
+  sourceCategory?: RawSourceCategory;
+  collectedAt?: string;
+  language?: "ko" | "en" | "unknown";
+  country?: Country;
   reliabilityTier: 1 | 2 | 3 | 4 | 5;
+  fetchStatus?: "success" | "failed";
+  fetchError?: string;
   licenseNotes?: string;
   fetchChecksum?: string;
   fetchedAt: string;
