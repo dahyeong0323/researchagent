@@ -1,6 +1,6 @@
 ﻿# LinkedIn Research Agent MVP
 
-LinkedIn Research Agent is a local-first scout for Korean LinkedIn business-observation ideas. It finds candidate topics, turns them into short "??援녹씠?" briefs, ranks them, optionally saves them to Notion, learns from human feedback, and exports selected candidates into writing briefs.
+LinkedIn Research Agent is a local-first scout for Korean LinkedIn business-observation ideas. It finds candidate topics, turns them into short "왜 굳이?" briefs, ranks them, optionally saves them to Notion, learns from human feedback, and exports selected candidates into writing briefs.
 
 This agent decides what might be worth writing about. The existing writing agent still decides how to draft the post.
 
@@ -34,7 +34,7 @@ npm.cmd install
 
 ```powershell
 npm run scout:local
-npm run scout:url -- --url "https://example.org/article" --dry-run
+npm run scout:url -- "https://example.org/article" --dry-run
 npm run scout:local -- --limit 5
 npm run scout:local:llm
 npm run scout:notion -- --dry-run
@@ -163,7 +163,7 @@ Live writes require Notion environment variables and a Notion database whose pro
 
 The Notion database must include a `Candidate ID` rich text property. The agent writes `ScoutCandidate.id` there so future Telegram callbacks can find and update the same candidate.
 
-The database must also include verification fields: `?쒕퉬??釉뚮옖?쒕챸`, `愿李곕맂 湲곕뒫/蹂??, `寃利??곹깭`, `洹쇨굅 ?ㅻ땲??, `洹쇨굅 ?좏삎`, and `寃利?硫붾え`. Candidates from sample URLs or without a real service, brand, company, app, or store name are marked `needs-research`.
+The database must also include verification fields: `서비스/브랜드명`, `관찰된 기능/변화`, `검증 상태`, `근거 스니펫`, `근거 유형`, and `검증 메모`. Candidates from sample URLs or without a real service, brand, company, app, or store name are marked `needs-research`.
 
 ## Telegram Notifications
 
