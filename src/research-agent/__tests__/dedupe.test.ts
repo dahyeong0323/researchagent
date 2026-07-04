@@ -66,4 +66,31 @@ describe("dedupeCandidates", () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe("verified");
   });
+
+  it("keeps verified evidence when the same entity and topic use less similar titles", () => {
+    const result = dedupeCandidates([
+      item({
+        id: "needs",
+        title: "Retail report on refill shopping behavior",
+        sourceUrl: "https://news.acme.test/a",
+        entityName: "Acme Beauty",
+        observedFeature: "refill station launch",
+        verificationStatus: "needs-research",
+        sourceReliability: 5
+      }),
+      item({
+        id: "verified",
+        title: "Acme Beauty opens Seoul refill pop-up",
+        sourceUrl: "https://news.acme.test/b",
+        entityName: "Acme Beauty",
+        observedFeature: "opened a refill station pop-up in Seoul",
+        verificationStatus: "verified",
+        sourceReliability: 3,
+        evidenceSnippet: "Acme Beauty opened a refill station pop-up in Seoul."
+      })
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("verified");
+  });
 });

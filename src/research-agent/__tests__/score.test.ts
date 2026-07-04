@@ -60,6 +60,27 @@ describe("scoreCandidate", () => {
     expect(vague.score).toBeLessThan(concrete.score);
   });
 
+  it("keeps a verified candidate above a keyword-rich unverified candidate", () => {
+    const verified = scoreCandidate(verifiedItem(), CATEGORY_BY_SOURCE.retail_brand);
+    const unverified = scoreCandidate(
+      item({
+        title: "Acme Beauty launches flagship refill store subscription partnership platform",
+        sourceCategory: "retail_brand",
+        rawSummary:
+          "Acme Beauty retail brand store launch partnership subscription consumer behavior offline flagship beauty consultation.",
+        entityName: "Acme Beauty",
+        observedFeature: "flagship refill store launch",
+        verificationStatus: "needs-research",
+        sourceReliability: 5,
+        sourcePublishedAt: "2026-07-01T00:00:00.000Z"
+      }),
+      CATEGORY_BY_SOURCE.retail_brand
+    );
+
+    expect(unverified.score).toBeLessThanOrEqual(60);
+    expect(verified.score).toBeGreaterThan(unverified.score);
+  });
+
   it("caps example.com candidates low", () => {
     const result = scoreCandidate(
       verifiedItem({ sourceUrl: "https://example.com/source" }),
@@ -89,6 +110,18 @@ describe("scoreCandidate", () => {
       memory
     );
 
-    expect(result.score).toBeLessThanOrEqual(10);
+    expect(result.score).toBeLessThanOrEqual(5);
+  });
+
+  it("caps missing-evidence candidates at 60", () => {
+    const result = scoreCandidate(
+      verifiedItem({
+        evidenceSnippet: undefined,
+        verificationStatus: "needs-research"
+      }),
+      CATEGORY_BY_SOURCE.retail_brand
+    );
+
+    expect(result.score).toBeLessThanOrEqual(60);
   });
 });

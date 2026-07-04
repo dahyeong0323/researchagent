@@ -172,8 +172,24 @@ describe("daily batch runner", () => {
           now,
           collectRssFeeds: async () => [
             verifiedRawItem({ id: "one", title: "Acme Beauty launches refill station pop-up one", sourceUrl: "https://news.acme.test/one" }),
-            verifiedRawItem({ id: "two", title: "Beta Market opens Seoul store", sourceUrl: "https://news.acme.test/two" }),
-            verifiedRawItem({ id: "three", title: "Coda App launches new feature", sourceUrl: "https://news.acme.test/three" })
+            verifiedRawItem({
+              id: "two",
+              title: "Beta Market opens Seoul store",
+              sourceUrl: "https://news.acme.test/two",
+              rawSummary: "Beta Market opened a small-format Seoul store for weekly grocery missions.",
+              entityName: "Beta Market",
+              observedFeature: "small-format Seoul grocery store",
+              evidenceSnippet: "Beta Market opened a small-format Seoul store for weekly grocery missions."
+            }),
+            verifiedRawItem({
+              id: "three",
+              title: "Coda App launches new feature",
+              sourceUrl: "https://news.acme.test/three",
+              rawSummary: "Coda App launched an approval workflow for team onboarding.",
+              entityName: "Coda App",
+              observedFeature: "approval workflow launch",
+              evidenceSnippet: "Coda App launched an approval workflow for team onboarding."
+            })
           ],
           writeCandidatesToNotion: async (candidates) =>
             candidates.map((candidate) => ({

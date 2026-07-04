@@ -184,7 +184,7 @@ function scoreCapFor(item: RawSourceItem): number {
   const host = hostnameFor(item.sourceUrl);
 
   if (item.verificationStatus === "rejected") {
-    cap = Math.min(cap, 10);
+    cap = Math.min(cap, 5);
   }
   if (item.verificationStatus === "needs-research") {
     cap = Math.min(cap, 60);
@@ -193,7 +193,7 @@ function scoreCapFor(item: RawSourceItem): number {
     cap = Math.min(cap, 45);
   }
   if (!item.evidenceSnippet) {
-    cap = Math.min(cap, 50);
+    cap = Math.min(cap, 60);
   }
   if (host === "example.com" || host.endsWith(".example.com") || item.sourceUrl.includes("example.com")) {
     cap = Math.min(cap, 30);

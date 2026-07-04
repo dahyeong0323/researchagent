@@ -47,6 +47,14 @@ function titleTokens(title: string): Set<string> {
   );
 }
 
+function entityKey(item: RawSourceItem): string {
+  return item.entityName?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
+}
+
+function observedFeatureTokens(item: RawSourceItem): Set<string> {
+  return titleTokens(item.observedFeature ?? "");
+}
+
 function jaccardSimilarity(left: Set<string>, right: Set<string>): number {
   if (left.size === 0 || right.size === 0) {
     return 0;
@@ -130,6 +138,28 @@ export function dedupeCandidates(items: RawSourceItem[]): RawSourceItem[] {
         seenUrls.add(urlKey);
         kept[similarTitleIndex] = item;
         keptTitleTokens[similarTitleIndex] = currentTitleTokens;
+      }
+      continue;
+    }
+
+    const currentEntityKey = entityKey(item);
+    const currentObservedTokens = observedFeatureTokens(item);
+    const similarEntityTopicIndex = kept.findIndex((keptItem, index) => {
+      if (!currentEntityKey || entityKey(keptItem) !== currentEntityKey) {
+        return false;
+      }
+
+      const titleSimilarity = jaccardSimilarity(keptTitleTokens[index], currentTitleTokens);
+      const observedSimilarity = jaccardSimilarity(observedFeatureTokens(keptItem), currentObservedTokens);
+      return titleSimilarity >= 0.45 || observedSimilarity >= 0.25;
+    });
+
+    if (similarEntityTopicIndex >= 0) {
+      if (isBetterCandidate(item, kept[similarEntityTopicIndex])) {
+        seenUrls.delete(normalizeUrl(kept[similarEntityTopicIndex].sourceUrl));
+        seenUrls.add(urlKey);
+        kept[similarEntityTopicIndex] = item;
+        keptTitleTokens[similarEntityTopicIndex] = currentTitleTokens;
       }
       continue;
     }
