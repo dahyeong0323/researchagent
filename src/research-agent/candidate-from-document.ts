@@ -35,7 +35,7 @@ function rawItemFromDocument(document: SourceDocument, entityName?: string, evid
 }
 
 function observedFeatureFromEvidence(evidence: EvidenceCandidate): string {
-  return `${evidence.entityName} ${evidence.trigger}`;
+  return evidence.observedFeature;
 }
 
 function buildCandidate(

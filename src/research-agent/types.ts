@@ -126,8 +126,10 @@ export type EvidenceCandidate = {
   evidenceId: string;
   entityId: string;
   entityName: string;
+  observedFeature: string;
   evidenceSnippet: string;
   evidenceType: EvidenceType;
+  sourceUrl?: string;
   paragraphId: string;
   paragraphIndex: number;
   trigger: string;
