@@ -174,3 +174,38 @@ npm.cmd run export:selected -- --feedback data/research-agent/feedback.notion.js
 `Candidate ID` stores `ScoutCandidate.id`. Telegram callbacks can use this value later to find the candidate and update its status without relying on the Notion page ID.
 
 The writer uses Notion's create page API with a parent database or data source and a `properties` object whose keys match the schema above. Long interpretive fields are also copied into the page body as readable blocks.
+
+## Research Workflow Extensions
+
+Prompt 3 adds workflow fields so Notion can separate candidate triage, verification, research tasks, and writing handoff readiness.
+
+| Property | Type | Purpose |
+| --- | --- | --- |
+| 출처 발행일 | Date | Original source publication date, falling back to discovered date when unavailable. |
+| 출처 유형 | Select | Evidence/source type such as official, article, app-store, manual-observation, release-note, or press-release. |
+| 엔티티 유형 | Select | Entity type such as company, brand, service, app, store, product, person, or unknown. |
+| Source Reliability | Number | Numeric reliability signal from verification or score breakdown. |
+| Confirmed Facts | Text / Rich text | Facts directly supported by the source. |
+| Reasonable Inferences | Text / Rich text | Interpretation allowed by the facts but not directly claimed by the source. |
+| Needs Verification | Text / Rich text | Missing facts, evidence, or source checks before writing. |
+| Workflow Status | Select | New, Needs Research, Rejected, Selected, Shortlisted, Written, Published. |
+| Brief Allowed | Checkbox | True only when verificationStatus is verified and strict brief gating passes. |
+| Writing Brief Status | Select | ready, not-ready, blocked. |
+| Research Task Status | Select | none, open, in-progress, resolved, cancelled. |
+| Research Task Reason | Text / Rich text | Why this candidate needs additional research or was rejected. |
+| Next Action | Select | Make Writing Brief, Make Research Task, Reject, Wait. |
+| Dedupe Cluster | Text / Rich text | Optional source/candidate cluster identifier. |
+| Human Note | Text / Rich text | Manual reviewer notes. |
+
+### Mapping Rules
+
+- `verified` + `Brief Allowed = true`: `Writing Brief Status = ready`, `Next Action = Make Writing Brief`.
+- `needs-research`: `Brief Allowed = false`, `Workflow Status = Needs Research`, `Research Task Status = open`, `Next Action = Make Research Task`.
+- `rejected`: `Brief Allowed = false`, `Workflow Status = Rejected`, `Writing Brief Status = blocked`, `Next Action = Reject`.
+
+### Recommended Views
+
+- `Inbox`: all new candidates sorted by score and discovered date.
+- `Needs Research`: `Workflow Status = Needs Research` or `Research Task Status = open`.
+- `Brief Ready`: `Brief Allowed = true` and `Writing Brief Status = ready`.
+- `Published Learning`: published or written candidates with feedback labels and human notes visible.

@@ -6,6 +6,7 @@ import type { ScoutCandidate } from "../types.ts";
 function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
   return {
     id: overrides.id ?? "candidate-1",
+    candidateId: overrides.candidateId ?? overrides.id ?? "candidate-1",
     discoveredDate: "2026-07-02",
     status: "new",
     feedbackLabels: [],
@@ -22,74 +23,115 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     },
     category: overrides.category ?? "리테일/브랜드",
     topicName: overrides.topicName ?? "테스트 리테일 후보",
-    oneLineSummary: "한 줄 요약",
-    coreWhyGudiQuestion: overrides.coreWhyGudiQuestion ?? "왜 굳이 이 브랜드는 별도 매장을 만들었을까?",
-    businessObservationAngle: "비즈니스 관찰기 각도",
-    consumerBehaviorAngle: "소비자 행동 관점",
-    connectionToExistingPosts: "기존 글과의 연결",
-    overlapRisk: "낮음",
-    recommendedFormat: "장문 관찰기",
-    visitPossible: "확인 필요",
-    sourceUrl: "https://example.com/source",
-    sourceName: "테스트 출처",
-    nextAction: "채택 검토",
+    oneLineSummary: overrides.oneLineSummary ?? "한 줄 요약",
+    coreWhyGudiQuestion:
+      overrides.coreWhyGudiQuestion ?? "왜 굳이 이 브랜드는 별도 매장을 만들었을까?",
+    businessObservationAngle: overrides.businessObservationAngle ?? "비즈니스 관찰기 각도",
+    consumerBehaviorAngle: overrides.consumerBehaviorAngle ?? "소비자 행동 관점",
+    connectionToExistingPosts: overrides.connectionToExistingPosts ?? "기존 글과의 연결",
+    overlapRisk: overrides.overlapRisk ?? "낮음",
+    recommendedFormat: overrides.recommendedFormat ?? "장문 관찰기",
+    visitPossible: overrides.visitPossible ?? "확인 필요",
+    sourceUrl: overrides.sourceUrl ?? "https://example.com/source",
+    sourceName: overrides.sourceName ?? "테스트 출처",
+    nextAction: overrides.nextAction ?? "채택 검토",
     entityName: overrides.entityName,
     entityType: overrides.entityType ?? "unknown",
     observedFeature: overrides.observedFeature,
     evidenceType: overrides.evidenceType ?? "unknown",
     verificationStatus: overrides.verificationStatus ?? "needs-research",
+    briefAllowed: overrides.briefAllowed ?? false,
     verificationNotes: overrides.verificationNotes
   };
 }
 
 describe("Telegram daily notification", () => {
-  it("renders a Top 5 daily summary with score, topic, category, and why-gudi question", () => {
+  it("renders required candidate fields", () => {
     const summary = renderTelegramDailySummary([candidate()]);
 
-    expect(summary).toContain("오늘 LinkedIn 소재 후보 1개를 Notion에 저장했습니다.");
-    expect(summary).toContain("[보류] 테스트 리테일 후보");
-    expect(summary).toContain("카테고리: 리테일/브랜드");
-    expect(summary).toContain("검증 상태: needs-research");
-    expect(summary).toContain("왜 굳이?: 왜 굳이 이 브랜드는 별도 매장을 만들었을까?");
+    expect(summary).toContain("Score: 91");
+    expect(summary).toContain("Entity/Topic: 테스트 리테일 후보");
+    expect(summary).toContain("Observed Feature: needs-research");
+    expect(summary).toContain("Verification Status: needs-research");
+    expect(summary).toContain("Source: 테스트 출처");
+    expect(summary).toContain("Evidence Type: unknown");
+    expect(summary).toContain("Why Gudi Question: 왜 굳이 이 브랜드는 별도 매장을 만들었을까?");
+    expect(summary).toContain("Brief Allowed: no");
+    expect(summary).toContain("Next Action: Make Research Task");
   });
 
-  it("renders entity name for verified candidates", () => {
-    const summary = renderTelegramDailySummary([
+  it("shows Make Writing Brief only for verified brief-allowed candidates", () => {
+    const keyboard = buildCandidateInlineKeyboard(
       candidate({
+        id: "sample-verified",
         entityName: "Headspace",
         entityType: "app",
-        observedFeature: "친구 체크인 기능",
+        observedFeature: "friend check-in",
         evidenceType: "official",
-        verificationStatus: "verified"
+        verificationStatus: "verified",
+        briefAllowed: true
       })
-    ]);
+    );
 
-    expect(summary).toContain("[91점] Headspace — 친구 체크인 기능");
-    expect(summary).toContain("서비스/브랜드: Headspace");
-    expect(summary).toContain("검증 상태: verified");
+    expect(keyboard.inline_keyboard[1]).toEqual([
+      { text: "Make Writing Brief", callback_data: "brief:create:sample-verified" }
+    ]);
   });
 
-  it("builds Selected, Shortlisted, and Rejected callback buttons with the candidate id", () => {
+  it("shows Make Research Task for needs-research candidates", () => {
+    const keyboard = buildCandidateInlineKeyboard(candidate({ id: "sample-needs-research" }));
+
+    expect(keyboard.inline_keyboard[1]).toEqual([
+      { text: "Make Research Task", callback_data: "task:create:sample-needs-research" }
+    ]);
+  });
+
+  it("does not show Make Writing Brief for rejected candidates", () => {
+    const keyboard = buildCandidateInlineKeyboard(
+      candidate({
+        id: "sample-rejected",
+        verificationStatus: "rejected",
+        briefAllowed: false
+      })
+    );
+
+    expect(keyboard.inline_keyboard.flat()).not.toContainEqual({
+      text: "Make Writing Brief",
+      callback_data: "brief:create:sample-rejected"
+    });
+    expect(keyboard.inline_keyboard[1]).toEqual([
+      { text: "Make Research Task", callback_data: "task:create:sample-rejected" }
+    ]);
+  });
+
+  it("builds status callback buttons with the new callback format", () => {
     const keyboard = buildCandidateInlineKeyboard(candidate({ id: "sample-003" }));
 
     expect(keyboard.inline_keyboard[0]).toEqual([
-      { text: "Selected", callback_data: "selected:sample-003" },
-      { text: "Shortlisted", callback_data: "shortlisted:sample-003" },
-      { text: "Rejected", callback_data: "rejected:sample-003" }
-    ]);
-    expect(keyboard.inline_keyboard[1]).toEqual([
-      { text: "Writing Brief 만들기", callback_data: "brief:sample-003" }
+      { text: "Selected", callback_data: "status:selected:sample-003" },
+      { text: "Shortlisted", callback_data: "status:shortlisted:sample-003" },
+      { text: "Rejected", callback_data: "status:rejected:sample-003" },
+      { text: "Needs Research", callback_data: "status:needs-research:sample-003" }
     ]);
   });
 
-  it("parses callback data into a Notion status update or brief target", () => {
-    expect(parseTelegramCallbackData("selected:sample-003")).toEqual({
+  it("parses status, task, and brief callback data", () => {
+    expect(parseTelegramCallbackData("status:selected:sample-003")).toEqual({
       action: "selected",
       candidateId: "sample-003",
       status: "Selected"
     });
-    expect(parseTelegramCallbackData("brief:sample-003")).toEqual({
-      action: "brief",
+    expect(parseTelegramCallbackData("status:needs-research:sample-003")).toEqual({
+      action: "needs-research",
+      candidateId: "sample-003",
+      status: "Needs Research"
+    });
+    expect(parseTelegramCallbackData("task:create:sample-003")).toEqual({
+      action: "task:create",
+      candidateId: "sample-003"
+    });
+    expect(parseTelegramCallbackData("brief:create:sample-003")).toEqual({
+      action: "brief:create",
       candidateId: "sample-003"
     });
     expect(parseTelegramCallbackData("ignored:sample-003")).toBeUndefined();

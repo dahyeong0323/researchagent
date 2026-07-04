@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_INPUT_PATH } from "./config.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
+import { createResearchTaskFromCandidate, renderResearchTaskMarkdown } from "./research-task.ts";
 import { processRawCandidates } from "./scout.ts";
 import type {
   FeedbackMemory,
@@ -874,11 +875,12 @@ export async function writeWritingBriefForCandidate(
   const outputDir = options.outputDir ?? DEFAULT_WRITING_BRIEF_OUTPUT_DIR;
   await mkdir(resolve(outputDir), { recursive: true });
 
-  if (candidate.verificationStatus !== "verified") {
+  if (candidate.verificationStatus !== "verified" || !candidate.briefAllowed) {
     process.stderr.write("Skipped writing brief: candidate requires real service/source verification.\n");
     const filename = `${date}-research-task-${slugifyFilePart(candidate.topicName)}.md`;
     const outputPath = resolve(join(outputDir, filename));
-    await writeFile(outputPath, renderResearchTask(candidate), "utf8");
+    const task = createResearchTaskFromCandidate(candidate);
+    await writeFile(outputPath, renderResearchTaskMarkdown(task, candidate), "utf8");
     return outputPath;
   }
 
@@ -899,7 +901,7 @@ export async function writeWritingBriefForCandidateId(
 
   const memory = await readFeedbackMemory(options.feedbackPath);
   const candidates = processRawCandidates(parsed, parsed.length, memory);
-  const candidate = candidates.find((item) => item.id === candidateId);
+  const candidate = candidates.find((item) => item.id === candidateId || item.candidateId === candidateId);
 
   if (!candidate) {
     return undefined;
@@ -910,6 +912,32 @@ export async function writeWritingBriefForCandidateId(
     outputDir: options.outputDir,
     useLlm: options.useLlm
   });
+}
+
+export async function writeResearchTaskForCandidateId(
+  candidateId: string,
+  options: { inputPath?: string; feedbackPath?: string; outputDir?: string; date?: string } = {}
+): Promise<string | undefined> {
+  const input = await readFile(resolve(options.inputPath ?? DEFAULT_INPUT_PATH), "utf8");
+  const parsed: unknown = JSON.parse(input);
+  assertRawSourceItems(parsed);
+
+  const memory = await readFeedbackMemory(options.feedbackPath);
+  const candidates = processRawCandidates(parsed, parsed.length, memory);
+  const candidate = candidates.find((item) => item.id === candidateId || item.candidateId === candidateId);
+
+  if (!candidate) {
+    return undefined;
+  }
+
+  const date = options.date ?? todayIsoDate();
+  const outputDir = options.outputDir ?? DEFAULT_WRITING_BRIEF_OUTPUT_DIR;
+  await mkdir(resolve(outputDir), { recursive: true });
+  const filename = `${date}-research-task-${slugifyFilePart(candidate.topicName)}.md`;
+  const outputPath = resolve(join(outputDir, filename));
+  const task = createResearchTaskFromCandidate(candidate);
+  await writeFile(outputPath, renderResearchTaskMarkdown(task, candidate), "utf8");
+  return outputPath;
 }
 
 async function main(): Promise<void> {

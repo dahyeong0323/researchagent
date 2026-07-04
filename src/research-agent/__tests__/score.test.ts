@@ -1,52 +1,94 @@
 import { describe, expect, it } from "vitest";
+import { CATEGORY_BY_SOURCE } from "../config.ts";
 import { scoreCandidate } from "../score.ts";
-import type { RawSourceItem } from "../types.ts";
+import type { FeedbackMemory, RawSourceItem } from "../types.ts";
 
 function item(overrides: Partial<RawSourceItem>): RawSourceItem {
   return {
-    title: overrides.title ?? "후보",
-    sourceUrl: overrides.sourceUrl ?? "https://example.com/test",
-    sourceName: overrides.sourceName ?? "테스트",
-    sourceCategory: overrides.sourceCategory ?? "manual",
-    collectedAt: overrides.collectedAt ?? "2026-07-02T00:00:00+09:00",
+    title: overrides.title ?? "Acme Beauty launches refill station pop-up",
+    sourceUrl: overrides.sourceUrl ?? "https://news.acme.test/test",
+    sourceName: overrides.sourceName ?? "Example News",
+    sourceCategory: overrides.sourceCategory ?? "retail_brand",
+    collectedAt: overrides.collectedAt ?? "2026-07-04T00:00:00.000Z",
+    sourcePublishedAt: overrides.sourcePublishedAt,
+    sourceReliability: overrides.sourceReliability,
     rawSummary: overrides.rawSummary,
     country: overrides.country,
-    id: overrides.id
+    id: overrides.id,
+    entityName: overrides.entityName,
+    observedFeature: overrides.observedFeature,
+    evidenceSnippet: overrides.evidenceSnippet,
+    evidenceType: overrides.evidenceType,
+    verificationStatus: overrides.verificationStatus
   };
 }
 
-describe("scoreCandidate", () => {
-  it("scores a concrete retail brand candidate highly", () => {
-    const candidate = item({
-      title: "다이소가 뷰티 전용 진열 구역을 확대하는 사례",
-      sourceCategory: "retail_brand",
-      rawSummary:
-        "저가 생활용품 매장이 뷰티 카테고리를 별도 목적 방문 구역처럼 키우는 사례. 소비자의 비교, 발견, 구매 행동을 볼 수 있다."
-    });
+function verifiedItem(overrides: Partial<RawSourceItem> = {}): RawSourceItem {
+  return item({
+    entityName: "Acme Beauty",
+    observedFeature: "refill station launch",
+    evidenceSnippet: "Acme Beauty launched a refill station pop-up in Seoul.",
+    evidenceType: "article",
+    verificationStatus: "verified",
+    sourcePublishedAt: "2026-07-01T00:00:00.000Z",
+    sourceReliability: 4,
+    rawSummary: "Acme Beauty opened a concrete retail pop-up with refill behavior and in-store consultation.",
+    ...overrides
+  });
+}
 
-    const result = scoreCandidate(candidate, "리테일/브랜드");
+describe("scoreCandidate", () => {
+  it("scores a concrete verified retail brand candidate highly", () => {
+    const result = scoreCandidate(verifiedItem(), CATEGORY_BY_SOURCE.retail_brand);
 
     expect(result.score).toBeGreaterThanOrEqual(80);
+    expect(result.scoreBreakdown.entityConcreteScore).toBe(15);
+    expect(result.scoreBreakdown.evidenceQualityScore).toBeGreaterThan(0);
   });
 
-  it("scores a vague macro candidate lower than a concrete retail candidate", () => {
-    const concrete = scoreCandidate(
-      item({
-        title: "다이소가 뷰티 전용 진열 구역을 확대하는 사례",
-        sourceCategory: "retail_brand",
-        rawSummary: "브랜드, 매장, 제품, 소비자 구매 행동이 구체적으로 드러나는 사례."
-      }),
-      "리테일/브랜드"
-    );
+  it("scores a vague macro candidate lower than a concrete verified candidate", () => {
+    const concrete = scoreCandidate(verifiedItem(), CATEGORY_BY_SOURCE.retail_brand);
     const vague = scoreCandidate(
       item({
-        title: "글로벌 경제 환경 변화에 따른 소비 심리 전망",
+        title: "Global economy outlook shifts consumer sentiment",
         sourceCategory: "manual",
-        rawSummary: "거시경제 흐름과 시장 전망을 일반적으로 설명하는 후보."
+        rawSummary: "A generic macro article about market conditions without a concrete company action."
       }),
-      "소비자 트렌드"
+      CATEGORY_BY_SOURCE.consumer_trend
     );
 
     expect(vague.score).toBeLessThan(concrete.score);
+  });
+
+  it("caps example.com candidates low", () => {
+    const result = scoreCandidate(
+      verifiedItem({ sourceUrl: "https://example.com/source" }),
+      CATEGORY_BY_SOURCE.retail_brand
+    );
+
+    expect(result.score).toBeLessThanOrEqual(30);
+  });
+
+  it("caps rejected candidates even when feedback is positive", () => {
+    const memory: FeedbackMemory = {
+      categoryWeights: { [CATEGORY_BY_SOURCE.retail_brand]: 1.25 },
+      sourceCategoryWeights: { retail_brand: 1.25 },
+      rejectedPatterns: [],
+      preferredAngles: ["Acme"],
+      recentTopics: [],
+      candidateFeedback: []
+    };
+
+    const result = scoreCandidate(
+      verifiedItem({
+        verificationStatus: "rejected",
+        evidenceType: "official",
+        sourceReliability: 5
+      }),
+      CATEGORY_BY_SOURCE.retail_brand,
+      memory
+    );
+
+    expect(result.score).toBeLessThanOrEqual(10);
   });
 });

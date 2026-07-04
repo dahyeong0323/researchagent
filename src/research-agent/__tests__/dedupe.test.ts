@@ -5,21 +5,28 @@ import type { RawSourceItem } from "../types.ts";
 function item(overrides: Partial<RawSourceItem>): RawSourceItem {
   return {
     id: overrides.id,
-    title: overrides.title ?? "기본 후보",
-    sourceUrl: overrides.sourceUrl ?? "https://example.com/default",
-    sourceName: overrides.sourceName ?? "테스트",
+    title: overrides.title ?? "Acme Beauty launches refill station pop-up",
+    sourceUrl: overrides.sourceUrl ?? "https://news.acme.test/default",
+    sourceName: overrides.sourceName ?? "Example News",
     sourceCategory: overrides.sourceCategory ?? "manual",
-    collectedAt: overrides.collectedAt ?? "2026-07-02T00:00:00+09:00",
+    collectedAt: overrides.collectedAt ?? "2026-07-02T00:00:00.000Z",
+    sourcePublishedAt: overrides.sourcePublishedAt,
+    sourceReliability: overrides.sourceReliability,
     rawSummary: overrides.rawSummary,
-    country: overrides.country
+    country: overrides.country,
+    entityName: overrides.entityName,
+    observedFeature: overrides.observedFeature,
+    evidenceSnippet: overrides.evidenceSnippet,
+    evidenceType: overrides.evidenceType,
+    verificationStatus: overrides.verificationStatus
   };
 }
 
 describe("dedupeCandidates", () => {
   it("removes candidates with the same sourceUrl", () => {
     const result = dedupeCandidates([
-      item({ id: "a", title: "첫 번째", sourceUrl: "https://example.com/a?utm=test" }),
-      item({ id: "b", title: "두 번째", sourceUrl: "https://example.com/a" })
+      item({ id: "a", title: "First", sourceUrl: "https://news.acme.test/a?utm=test" }),
+      item({ id: "b", title: "Second", sourceUrl: "https://news.acme.test/a" })
     ]);
 
     expect(result).toHaveLength(1);
@@ -28,11 +35,35 @@ describe("dedupeCandidates", () => {
 
   it("removes candidates with highly similar titles", () => {
     const result = dedupeCandidates([
-      item({ id: "a", title: "중고거래 플랫폼이 오프라인 검수 팝업을 여는 사례", sourceUrl: "https://example.com/a" }),
-      item({ id: "b", title: "중고거래 플랫폼이 오프라인 검수 팝업을 여는 선택", sourceUrl: "https://example.com/b" })
+      item({ id: "a", title: "Acme Beauty launches refill station pop-up", sourceUrl: "https://news.acme.test/a" }),
+      item({ id: "b", title: "Acme Beauty launched refill station pop up", sourceUrl: "https://news.acme.test/b" })
     ]);
 
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe("a");
+  });
+
+  it("keeps the verified candidate inside a duplicate cluster", () => {
+    const result = dedupeCandidates([
+      item({
+        id: "needs",
+        title: "Acme Beauty launches refill station pop-up",
+        sourceUrl: "https://news.acme.test/a",
+        verificationStatus: "needs-research",
+        sourceReliability: 3
+      }),
+      item({
+        id: "verified",
+        title: "Acme Beauty launched refill station pop up",
+        sourceUrl: "https://news.acme.test/b",
+        verificationStatus: "verified",
+        sourceReliability: 4,
+        evidenceSnippet: "Acme Beauty launched a refill station pop-up in Seoul.",
+        sourcePublishedAt: "2026-07-01T00:00:00.000Z"
+      })
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe("verified");
   });
 });

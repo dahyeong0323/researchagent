@@ -71,27 +71,37 @@ export async function sendTelegramMessage(
   }
 }
 
+function nextActionForTelegram(candidate: ScoutCandidate): string {
+  if (candidate.verificationStatus === "verified" && candidate.briefAllowed) {
+    return "Make Writing Brief";
+  }
+
+  if (candidate.verificationStatus === "rejected") {
+    return "Reject";
+  }
+
+  return "Make Research Task";
+}
+
 export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string {
   const topCandidates = candidates.slice(0, TOP_CANDIDATE_LIMIT);
   const lines = [`오늘 LinkedIn 소재 후보 ${candidates.length}개를 Notion에 저장했습니다.`, "", "Top 5 후보"];
 
   topCandidates.forEach((candidate, index) => {
-    const title =
-      candidate.verificationStatus === "verified" && candidate.entityName
-        ? `${candidate.entityName} — ${candidate.observedFeature ?? candidate.topicName}`
-        : `[보류] ${candidate.topicName}`;
+    const displayName = candidate.entityName ?? candidate.topicName;
 
     lines.push(
       "",
-      candidate.verificationStatus === "verified"
-        ? `${index + 1}. [${candidate.score}점] ${title}`
-        : `${index + 1}. ${title}`,
-      `카테고리: ${candidate.category}`,
-      `검증 상태: ${candidate.verificationStatus}`,
-      ...(candidate.verificationStatus === "verified" && candidate.entityName
-        ? [`서비스/브랜드: ${candidate.entityName}`]
-        : ["필요: 실제 서비스명과 공식/기사 출처 확인"]),
-      `왜 굳이?: ${candidate.coreWhyGudiQuestion}`
+      `${index + 1}. [${candidate.score}점] ${displayName}`,
+      `Score: ${candidate.score}`,
+      `Entity/Topic: ${displayName}`,
+      `Observed Feature: ${candidate.observedFeature ?? "needs-research"}`,
+      `Verification Status: ${candidate.verificationStatus}`,
+      `Source: ${candidate.sourceName}`,
+      `Evidence Type: ${candidate.evidenceType}`,
+      `Why Gudi Question: ${candidate.coreWhyGudiQuestion}`,
+      `Brief Allowed: ${candidate.briefAllowed ? "yes" : "no"}`,
+      `Next Action: ${nextActionForTelegram(candidate)}`
     );
   });
 
@@ -99,16 +109,19 @@ export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string
 }
 
 export function buildCandidateInlineKeyboard(candidate: ScoutCandidate): TelegramReplyMarkup {
-  return {
-    inline_keyboard: [
-      buildCandidateStatusButtonRow(candidate),
-      [
-        {
-          text: "Writing Brief 만들기",
-          callback_data: `brief:${candidate.id}`
+  const workflowButton =
+    candidate.verificationStatus === "verified" && candidate.briefAllowed
+      ? {
+          text: "Make Writing Brief",
+          callback_data: `brief:create:${candidate.candidateId}`
         }
-      ]
-    ]
+      : {
+          text: "Make Research Task",
+          callback_data: `task:create:${candidate.candidateId}`
+        };
+
+  return {
+    inline_keyboard: [buildCandidateStatusButtonRow(candidate), [workflowButton]]
   };
 }
 
@@ -116,15 +129,19 @@ function buildCandidateStatusButtonRow(candidate: ScoutCandidate): TelegramInlin
   return [
     {
       text: "Selected",
-      callback_data: `selected:${candidate.id}`
+      callback_data: `status:selected:${candidate.candidateId}`
     },
     {
       text: "Shortlisted",
-      callback_data: `shortlisted:${candidate.id}`
+      callback_data: `status:shortlisted:${candidate.candidateId}`
     },
     {
       text: "Rejected",
-      callback_data: `rejected:${candidate.id}`
+      callback_data: `status:rejected:${candidate.candidateId}`
+    },
+    {
+      text: "Needs Research",
+      callback_data: `status:needs-research:${candidate.candidateId}`
     }
   ];
 }

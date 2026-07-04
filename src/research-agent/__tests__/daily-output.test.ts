@@ -4,6 +4,7 @@ import type { ScoutCandidate } from "../types.ts";
 
 const candidate: ScoutCandidate = {
   id: "candidate-1",
+  candidateId: "candidate-1",
   discoveredDate: "2026-07-02",
   status: "new",
   feedbackLabels: [],
@@ -33,7 +34,8 @@ const candidate: ScoutCandidate = {
   nextAction: "채택 검토",
   entityType: "brand",
   evidenceType: "article",
-  verificationStatus: "verified"
+  verificationStatus: "verified",
+  briefAllowed: true
 };
 
 describe("renderDailyScoutMarkdown", () => {

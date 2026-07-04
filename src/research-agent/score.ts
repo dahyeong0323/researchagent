@@ -4,7 +4,7 @@ import {
   feedbackScoreAdjustment,
   feedbackScoreMultiplier
 } from "./feedback.ts";
-import type { CandidateCategory, FeedbackMemory, RawSourceItem, ScoreBreakdown } from "./types.ts";
+import type { CandidateCategory, FeedbackMemory, RawSourceItem, ScoreBreakdown, VerificationStatus } from "./types.ts";
 
 function includesAny(text: string, keywords: string[]): boolean {
   return keywords.some((keyword) => text.includes(keyword));
@@ -79,6 +79,129 @@ function scoreNovelty(text: string): number {
   return overlapsRecentTopic ? 5 : 10;
 }
 
+function normalizeText(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+function isGenericEntityName(value: string | undefined): boolean {
+  const normalized = normalizeText(value).toLowerCase();
+  return (
+    normalized.length === 0 ||
+    [
+      "명상 앱",
+      "어떤 서비스",
+      "한 브랜드",
+      "this app",
+      "a startup",
+      "a company",
+      "some brand",
+      "meditation app"
+    ].includes(normalized)
+  );
+}
+
+function hasLikelyEntityInText(text: string): boolean {
+  return /\b[A-Z][A-Za-z0-9&'.-]*(?:\s+[A-Z][A-Za-z0-9&'.-]*){1,3}\b/u.test(text);
+}
+
+function scoreEntityConcrete(item: RawSourceItem, text: string): number {
+  if (item.entityName && !isGenericEntityName(item.entityName)) {
+    return 15;
+  }
+
+  return hasLikelyEntityInText(text) ? 7 : 0;
+}
+
+function scoreEvidenceQuality(item: RawSourceItem): number {
+  if (item.evidenceSnippet && item.evidenceSnippet.trim().length >= 30) {
+    return 20;
+  }
+
+  if (item.evidenceSnippet) {
+    return 14;
+  }
+
+  if (item.observedFeature) {
+    return 6;
+  }
+
+  return 0;
+}
+
+function scoreSourceReliability(item: RawSourceItem): number {
+  const rawReliability = item.sourceReliability ?? SOURCE_RELIABILITY[item.sourceCategory] ?? 1;
+  return Math.max(0, Math.min(15, rawReliability * 3));
+}
+
+function scoreFreshness(item: RawSourceItem): number {
+  const published = item.sourcePublishedAt ?? item.publishedAt;
+  if (!published) {
+    return 0;
+  }
+
+  const publishedAt = new Date(published).getTime();
+  const collectedAt = new Date(item.collectedAt).getTime();
+  if (!Number.isFinite(publishedAt) || !Number.isFinite(collectedAt)) {
+    return 0;
+  }
+
+  const ageDays = Math.max(0, (collectedAt - publishedAt) / 86_400_000);
+  if (ageDays <= 7) {
+    return 10;
+  }
+  if (ageDays <= 30) {
+    return 8;
+  }
+  if (ageDays <= 90) {
+    return 5;
+  }
+  return 2;
+}
+
+function scoreVerificationStatus(status: VerificationStatus | undefined): number {
+  if (status === "verified") {
+    return 10;
+  }
+  if (status === "needs-research") {
+    return 2;
+  }
+  if (status === "rejected") {
+    return -20;
+  }
+  return 0;
+}
+
+function hostnameFor(sourceUrl: string): string {
+  try {
+    return new URL(sourceUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function scoreCapFor(item: RawSourceItem): number {
+  let cap = 100;
+  const host = hostnameFor(item.sourceUrl);
+
+  if (item.verificationStatus === "rejected") {
+    cap = Math.min(cap, 10);
+  }
+  if (item.verificationStatus === "needs-research") {
+    cap = Math.min(cap, 60);
+  }
+  if (!item.entityName || isGenericEntityName(item.entityName)) {
+    cap = Math.min(cap, 45);
+  }
+  if (!item.evidenceSnippet) {
+    cap = Math.min(cap, 50);
+  }
+  if (host === "example.com" || host.endsWith(".example.com") || item.sourceUrl.includes("example.com")) {
+    cap = Math.min(cap, 30);
+  }
+
+  return cap;
+}
+
 export function scoreCandidate(
   item: RawSourceItem,
   category: CandidateCategory,
@@ -96,15 +219,21 @@ export function scoreCandidate(
     dahyeongFit: scoreDahyeongFit(text, category),
     novelty: scoreNovelty(text),
     sourceReliability: SOURCE_RELIABILITY[item.sourceCategory],
+    entityConcreteScore: scoreEntityConcrete(item, text),
+    evidenceQualityScore: scoreEvidenceQuality(item),
+    sourceReliabilityScore: scoreSourceReliability(item),
+    sourceFreshnessScore: scoreFreshness(item),
+    verificationStatusScore: scoreVerificationStatus(item.verificationStatus),
     visitabilityBonus
   };
 
   const baseScore = Object.values(scoreBreakdown).reduce((sum, value) => sum + value, 0);
   const weightAdjustment = Math.round((feedbackScoreMultiplier(item, category, memory) - 1) * 20);
-  const score = Math.max(
+  const uncappedScore = Math.max(
     0,
     Math.min(100, baseScore + weightAdjustment + feedbackScoreAdjustment(item, memory))
   );
+  const score = Math.min(uncappedScore, scoreCapFor(item));
 
   return { score, scoreBreakdown };
 }

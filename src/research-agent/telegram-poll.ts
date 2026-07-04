@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadLocalEnv } from "./env.ts";
-import { writeWritingBriefForCandidateId } from "./export-to-writing.ts";
+import { writeResearchTaskForCandidateId, writeWritingBriefForCandidateId } from "./export-to-writing.ts";
 import { readNotionConfig, updateCandidateStatusByCandidateId } from "./notion.ts";
 import { readTelegramConfig, sendTelegramMessage, type TelegramReplyMarkup } from "./telegram.ts";
 
@@ -11,9 +11,9 @@ loadLocalEnv();
 const TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const DEFAULT_OFFSET_PATH = "data/research-agent/telegram-offset.json";
 
-type StatusCallbackAction = "selected" | "shortlisted" | "rejected";
-type CallbackAction = StatusCallbackAction | "brief";
-type NotionStatus = "Selected" | "Shortlisted" | "Rejected";
+type StatusCallbackAction = "selected" | "shortlisted" | "rejected" | "needs-research";
+type CallbackAction = StatusCallbackAction | "task:create" | "brief:create";
+type NotionStatus = "Selected" | "Shortlisted" | "Rejected" | "Needs Research";
 
 type ParsedCallbackData = {
   action: CallbackAction;
@@ -32,7 +32,8 @@ type TelegramUpdate = {
 const STATUS_BY_ACTION: Record<StatusCallbackAction, NotionStatus> = {
   selected: "Selected",
   shortlisted: "Shortlisted",
-  rejected: "Rejected"
+  rejected: "Rejected",
+  "needs-research": "Needs Research"
 };
 
 function warn(message: string): void {
@@ -48,28 +49,33 @@ export function parseTelegramCallbackData(data?: string): ParsedCallbackData | u
     return undefined;
   }
 
-  const separatorIndex = data.indexOf(":");
-  if (separatorIndex === -1) {
+  const parts = data.split(":");
+  if (parts.length !== 3) {
     return undefined;
   }
 
-  const action = data.slice(0, separatorIndex) as CallbackAction;
-  const candidateId = data.slice(separatorIndex + 1).trim();
-  if (action === "brief" && candidateId) {
+  const [group, actionName, candidateIdValue] = parts;
+  const candidateId = candidateIdValue.trim();
+
+  if ((group === "brief" || group === "task") && actionName === "create" && candidateId) {
     return {
-      action,
+      action: `${group}:create` as CallbackAction,
       candidateId
     };
   }
 
-  const status = STATUS_BY_ACTION[action as StatusCallbackAction];
+  if (group !== "status") {
+    return undefined;
+  }
+
+  const status = STATUS_BY_ACTION[actionName as StatusCallbackAction];
 
   if (!status || !candidateId) {
     return undefined;
   }
 
   return {
-    action,
+    action: actionName as StatusCallbackAction,
     candidateId,
     status
   };
@@ -82,6 +88,23 @@ function buildWritingBriefKeyboard(candidateId: string): TelegramReplyMarkup {
         {
           text: "Writing Brief 만들기",
           callback_data: `brief:${candidateId}`
+        }
+      ]
+    ]
+  };
+}
+
+function buildPostSelectionKeyboard(candidateId: string): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "Make Writing Brief",
+          callback_data: `brief:create:${candidateId}`
+        },
+        {
+          text: "Make Research Task",
+          callback_data: `task:create:${candidateId}`
         }
       ]
     ]
@@ -168,7 +191,25 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
     return;
   }
 
-  if (parsed.action === "brief") {
+  if (parsed.action === "task:create") {
+    const outputPath = await writeResearchTaskForCandidateId(parsed.candidateId);
+    if (!outputPath) {
+      const message = `Research task creation failed: candidate not found (${parsed.candidateId})`;
+      warn(message);
+      await answerCallbackQuery(botToken, callbackQuery.id, message.slice(0, 180)).catch((error) =>
+        warn(error instanceof Error ? error.message : String(error))
+      );
+      return;
+    }
+
+    const message = `Research task created: ${outputPath}`;
+    await answerCallbackQuery(botToken, callbackQuery.id, "Research task created");
+    await sendTelegramMessage(message);
+    info(message);
+    return;
+  }
+
+  if (parsed.action === "brief:create") {
     const outputPath = await writeWritingBriefForCandidateId(parsed.candidateId);
     if (!outputPath) {
       const message = `Writing brief 생성 실패: 후보를 찾지 못했습니다 (${parsed.candidateId})`;
@@ -181,7 +222,9 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
 
     const isResearchTask = outputPath.includes("research-task-");
     const label = isResearchTask ? "Research task 생성 완료" : "Writing brief 생성 완료";
-    const message = `${label}: ${outputPath}`;
+    const message = isResearchTask
+      ? `Writing brief blocked because this candidate is not verified. Research task created: ${outputPath}`
+      : `${label}: ${outputPath}`;
     await answerCallbackQuery(botToken, callbackQuery.id, label);
     await sendTelegramMessage(message);
     info(message);
@@ -207,7 +250,7 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
   await answerCallbackQuery(botToken, callbackQuery.id, confirmation);
   await sendTelegramMessage(
     confirmation,
-    parsed.action === "selected" ? buildWritingBriefKeyboard(parsed.candidateId) : undefined
+    parsed.action === "selected" ? buildPostSelectionKeyboard(parsed.candidateId) : undefined
   );
   info(confirmation);
 }

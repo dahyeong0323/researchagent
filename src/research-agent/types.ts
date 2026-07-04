@@ -11,13 +11,34 @@ export type RawSourceCategory =
   | "global_case"
   | "manual";
 
+export type CollectorType =
+  | "manual-json"
+  | "manual-url"
+  | "manual-observation"
+  | "rss"
+  | "official-blog"
+  | "official-newsroom"
+  | "article"
+  | "app-store";
+
 export type RawSourceItem = {
   id?: string;
+  collectorType?: CollectorType;
   title: string;
   sourceUrl: string;
   sourceName: string;
+  sourcePublishedAt?: string;
+  sourceReliability?: number;
   publishedAt?: string;
   rawSummary?: string;
+  rawText?: string;
+  rawHtml?: string;
+  author?: string;
+  rssGuid?: string;
+  canonicalUrl?: string;
+  fetchStatus?: "not-fetched" | "success" | "failed";
+  parseStatus?: "not-parsed" | "success" | "failed";
+  language?: string;
   country?: Country;
   sourceCategory: RawSourceCategory;
   collectedAt: string;
@@ -30,11 +51,113 @@ export type RawSourceItem = {
   verificationNotes?: string;
 };
 
-export type EntityType = "service" | "brand" | "company" | "app" | "store" | "unknown";
+export type EntityType =
+  | "service"
+  | "brand"
+  | "company"
+  | "app"
+  | "store"
+  | "product"
+  | "person"
+  | "unknown";
 
-export type EvidenceType = "official" | "app-store" | "article" | "manual-observation" | "unknown";
+export type EvidenceType =
+  | "official"
+  | "app-store"
+  | "article"
+  | "manual-observation"
+  | "release-note"
+  | "press-release"
+  | "unknown";
 
 export type VerificationStatus = "verified" | "needs-research" | "rejected";
+
+export type SourceParagraph = {
+  id: string;
+  index: number;
+  text: string;
+};
+
+export type SourceDocument = {
+  documentId: string;
+  sourceItemId?: string;
+  canonicalUrl: string;
+  documentType: CollectorType;
+  title: string;
+  publishedAt?: string;
+  siteName: string;
+  siteType?: string;
+  contentText: string;
+  contentMarkdown?: string;
+  paragraphs: SourceParagraph[];
+  reliabilityTier: 1 | 2 | 3 | 4 | 5;
+  licenseNotes?: string;
+  fetchChecksum?: string;
+  fetchedAt: string;
+};
+
+export type Entity = {
+  entityId: string;
+  normalizedName: string;
+  displayName: string;
+  entityType: EntityType;
+  aliases: string[];
+  homepageUrl?: string;
+  appStoreUrl?: string;
+  playStoreUrl?: string;
+  country?: string;
+  industry?: string;
+  confidence: number;
+  resolutionMethod: "provided" | "metadata" | "jsonld" | "title" | "body" | "manual" | "unknown";
+};
+
+export type EvidenceCandidate = {
+  evidenceId: string;
+  entityId: string;
+  entityName: string;
+  evidenceSnippet: string;
+  evidenceType: EvidenceType;
+  paragraphId: string;
+  paragraphIndex: number;
+  trigger: string;
+  confidence: number;
+};
+
+export type VerificationResult = {
+  verificationId: string;
+  candidateId?: string;
+  entityName?: string;
+  entityType: EntityType;
+  observedFeature?: string;
+  verificationStatus: VerificationStatus;
+  sourceReliability: number;
+  evidenceSnippet?: string;
+  evidenceType: EvidenceType;
+  evidenceParagraphIds: string[];
+  confirmedFacts: string[];
+  reasonableInferences: string[];
+  needsVerification: string[];
+  verificationNotes: string;
+  rejectedReason?: string;
+  reviewedBy?: "system" | "human";
+  reviewedAt: string;
+};
+
+export type ResearchTask = {
+  taskId: string;
+  candidateId: string;
+  taskTitle: string;
+  taskReason: string;
+  missingFields: string[];
+  requiredSources: string[];
+  verificationQuestions: string[];
+  suggestedSearchQueries: string[];
+  priority: "low" | "medium" | "high";
+  completionCriteria: string[];
+  status: "open" | "in-progress" | "resolved" | "cancelled";
+  createdAt: string;
+  resolvedAt?: string;
+};
 
 export type CandidateStatus =
   | "new"
@@ -65,6 +188,11 @@ export type ScoreBreakdown = {
   dahyeongFit: number;
   novelty: number;
   sourceReliability: number;
+  entityConcreteScore?: number;
+  evidenceQualityScore?: number;
+  sourceReliabilityScore?: number;
+  sourceFreshnessScore?: number;
+  verificationStatusScore?: number;
   visitabilityBonus: number;
 };
 
@@ -98,8 +226,18 @@ export type NextAction =
   | "폐기"
   | "글쓰기 에이전트로 전달";
 
+export type ResearchNextAction =
+  | "select-candidate"
+  | "make-research-task"
+  | "make-writing-brief"
+  | "reject"
+  | "wait";
+
 export type ScoutCandidate = {
   id: string;
+  candidateId: string;
+  originDocumentIds?: string[];
+  entityId?: string;
   discoveredDate: string;
   status: CandidateStatus;
   feedbackLabels: FeedbackLabel[];
@@ -117,14 +255,21 @@ export type ScoutCandidate = {
   visitPossible: VisitPossible;
   sourceUrl: string;
   sourceName: string;
-  nextAction: NextAction;
+  sourcePublishedAt?: string;
+  sourceReliability?: number;
+  nextAction: NextAction | ResearchNextAction;
   entityName?: string;
   entityType: EntityType;
   observedFeature?: string;
   evidenceSnippet?: string;
   evidenceType: EvidenceType;
+  evidenceParagraphIds?: string[];
   verificationStatus: VerificationStatus;
   verificationNotes?: string;
+  confirmedFacts?: string[];
+  reasonableInferences?: string[];
+  needsVerification?: string[];
+  briefAllowed: boolean;
 };
 
 export type CandidateEnrichment = {

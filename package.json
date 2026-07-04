@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "scout:local": "tsx src/research-agent/index.ts",
+    "scout:url": "tsx src/research-agent/index.ts",
     "scout:local:llm": "tsx src/research-agent/index.ts --llm",
     "scout:notion": "tsx src/research-agent/index.ts --notion",
     "scout:feedback": "tsx src/research-agent/index.ts --feedback data/research-agent/feedback.sample.json",
@@ -12,6 +13,8 @@
     "export:selected:llm": "tsx src/research-agent/export-to-writing.ts --feedback data/research-agent/feedback.notion.json --llm",
     "feedback:notion": "tsx src/research-agent/sync-feedback-from-notion.ts",
     "telegram:poll": "tsx src/research-agent/telegram-poll.ts",
+    "daily": "tsx src/research-agent/daily.ts",
+    "daily:dry": "tsx src/research-agent/daily.ts --dry-run",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

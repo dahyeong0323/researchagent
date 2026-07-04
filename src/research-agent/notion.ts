@@ -1,4 +1,4 @@
-import type { ScoutCandidate } from "./types.ts";
+import type { ResearchTask, ScoutCandidate } from "./types.ts";
 import type { CandidateFeedbackRecord, FeedbackLabel } from "./types.ts";
 
 const NOTION_PAGES_URL = "https://api.notion.com/v1/pages";
@@ -29,7 +29,7 @@ export type NotionWriteResult = {
 
 export type NotionStatusUpdateResult = {
   candidateId: string;
-  status: "Selected" | "Shortlisted" | "Rejected";
+  status: "Selected" | "Shortlisted" | "Rejected" | "Needs Research";
   ok: boolean;
   pageId?: string;
   topicName?: string;
@@ -90,6 +90,10 @@ function number(value: number): { number: number } {
   return { number: value };
 }
 
+function checkbox(value: boolean): { checkbox: boolean } {
+  return { checkbox: value };
+}
+
 function url(value: string): { url: string } {
   return { url: value };
 }
@@ -98,6 +102,10 @@ function multiSelect(values: string[]): { multi_select: Array<{ name: string }> 
   return {
     multi_select: values.map((value) => ({ name: value }))
   };
+}
+
+function joinedRichText(values: string[] | undefined): ReturnType<typeof richText> {
+  return richText((values ?? []).join("\n"));
 }
 
 function paragraph(content: string) {
@@ -114,6 +122,98 @@ function paragraph(content: string) {
         }
       ]
     }
+  };
+}
+
+function workflowStatus(candidate: ScoutCandidate): string {
+  if (candidate.verificationStatus === "rejected") {
+    return "Rejected";
+  }
+
+  if (candidate.verificationStatus === "needs-research") {
+    return "Needs Research";
+  }
+
+  return statusName(candidate.status);
+}
+
+function workflowNextAction(candidate: ScoutCandidate): string {
+  if (candidate.verificationStatus === "verified" && candidate.briefAllowed) {
+    return "Make Writing Brief";
+  }
+
+  if (candidate.verificationStatus === "needs-research") {
+    return "Make Research Task";
+  }
+
+  if (candidate.verificationStatus === "rejected") {
+    return "Reject";
+  }
+
+  return "Wait";
+}
+
+function researchTaskStatus(candidate: ScoutCandidate): string {
+  return candidate.verificationStatus === "needs-research" ? "open" : "none";
+}
+
+function writingBriefStatus(candidate: ScoutCandidate): string {
+  if (candidate.verificationStatus === "verified" && candidate.briefAllowed) {
+    return "ready";
+  }
+
+  if (candidate.verificationStatus === "rejected") {
+    return "blocked";
+  }
+
+  return "not-ready";
+}
+
+function researchTaskReason(candidate: ScoutCandidate): string {
+  if (candidate.verificationStatus === "needs-research") {
+    return candidate.verificationNotes ?? "Candidate needs source, entity, feature, or evidence verification.";
+  }
+
+  if (candidate.verificationStatus === "rejected") {
+    return candidate.verificationNotes ?? "Candidate was rejected by verification.";
+  }
+
+  return "";
+}
+
+function buildCandidateWorkflowProperties(candidate: ScoutCandidate) {
+  return {
+    "출처 발행일": date(candidate.sourcePublishedAt ?? candidate.discoveredDate),
+    "출처 유형": select(candidate.evidenceType),
+    "엔티티 유형": select(candidate.entityType),
+    "Source Reliability": number(candidate.sourceReliability ?? candidate.scoreBreakdown.sourceReliability),
+    "Confirmed Facts": joinedRichText(candidate.confirmedFacts),
+    "Reasonable Inferences": joinedRichText(candidate.reasonableInferences),
+    "Needs Verification": joinedRichText(candidate.needsVerification),
+    "Workflow Status": select(workflowStatus(candidate)),
+    "Brief Allowed": checkbox(candidate.briefAllowed),
+    "Writing Brief Status": select(writingBriefStatus(candidate)),
+    "Research Task Status": select(researchTaskStatus(candidate)),
+    "Research Task Reason": richText(researchTaskReason(candidate)),
+    "Next Action": select(workflowNextAction(candidate)),
+    "Dedupe Cluster": richText(candidate.originDocumentIds?.join(", ") ?? ""),
+    "Human Note": richText("")
+  };
+}
+
+export function buildResearchTaskNotionProperties(task: ResearchTask, candidate: ScoutCandidate) {
+  return {
+    "Candidate ID": richText(candidate.candidateId),
+    "Research Task Status": select(task.status),
+    "Research Task Reason": richText(task.taskReason),
+    "Missing Fields": joinedRichText(task.missingFields),
+    "Required Sources": joinedRichText(task.requiredSources),
+    "Verification Questions": joinedRichText(task.verificationQuestions),
+    "Suggested Search Queries": joinedRichText(task.suggestedSearchQueries),
+    "Task Priority": select(task.priority),
+    "Completion Criteria": joinedRichText(task.completionCriteria),
+    "Next Action": select("Make Research Task"),
+    "Brief Allowed": checkbox(false)
   };
 }
 
@@ -177,10 +277,11 @@ export function buildCandidatePagePayload(candidate: ScoutCandidate, parent: Not
   return {
     parent,
     properties: {
+      ...buildCandidateWorkflowProperties(candidate),
       "Candidate ID": richText(candidate.id),
       "소재명": title(candidate.topicName),
       "발견 날짜": date(candidate.discoveredDate),
-      "상태": select(statusName(candidate.status)),
+      "상태": select(workflowStatus(candidate)),
       "피드백 라벨": multiSelect(candidate.feedbackLabels),
       "점수": number(candidate.score),
       "카테고리": select(candidate.category),
@@ -221,6 +322,21 @@ export function validateCandidatePagePayload(payload: ReturnType<typeof buildCan
   const properties = payload.properties;
   const requiredProperties = [
     "Candidate ID",
+    "출처 발행일",
+    "출처 유형",
+    "엔티티 유형",
+    "Source Reliability",
+    "Confirmed Facts",
+    "Reasonable Inferences",
+    "Needs Verification",
+    "Workflow Status",
+    "Brief Allowed",
+    "Writing Brief Status",
+    "Research Task Status",
+    "Research Task Reason",
+    "Next Action",
+    "Dedupe Cluster",
+    "Human Note",
     "소재명",
     "발견 날짜",
     "상태",

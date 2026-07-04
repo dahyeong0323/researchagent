@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildCandidatePagePayload, validateCandidatePagePayload } from "../notion.ts";
-import type { ScoutCandidate } from "../types.ts";
+import {
+  buildCandidatePagePayload,
+  buildResearchTaskNotionProperties,
+  validateCandidatePagePayload
+} from "../notion.ts";
+import type { ResearchTask, ScoutCandidate } from "../types.ts";
 
 const candidate: ScoutCandidate = {
   id: "candidate-telegram-1",
+  candidateId: "candidate-telegram-1",
   discoveredDate: "2026-07-02",
   status: "new",
   feedbackLabels: [],
@@ -37,6 +42,12 @@ const candidate: ScoutCandidate = {
   evidenceSnippet: "테스트 근거",
   evidenceType: "article",
   verificationStatus: "verified",
+  briefAllowed: true,
+  sourcePublishedAt: "2026-07-01",
+  sourceReliability: 4,
+  confirmedFacts: ["Entity identified: test brand"],
+  reasonableInferences: ["The offline store may be a trust signal."],
+  needsVerification: ["Check official launch page"],
   verificationNotes: "테스트 검증"
 };
 
@@ -69,6 +80,96 @@ describe("Notion payload mapping", () => {
       select: {
         name: "verified"
       }
+    });
+  });
+
+  it("maps verified candidates to brief-ready workflow properties", () => {
+    const payload = buildCandidatePagePayload(candidate, {
+      database_id: "test-database-id"
+    });
+
+    expect(payload.properties["Brief Allowed"]).toEqual({ checkbox: true });
+    expect(payload.properties["Writing Brief Status"]).toEqual({ select: { name: "ready" } });
+    expect(payload.properties["Next Action"]).toEqual({ select: { name: "Make Writing Brief" } });
+  });
+
+  it("maps needs-research candidates to an open research task workflow", () => {
+    const payload = buildCandidatePagePayload(
+      {
+        ...candidate,
+        verificationStatus: "needs-research",
+        briefAllowed: false,
+        verificationNotes: "Evidence is missing."
+      },
+      {
+        database_id: "test-database-id"
+      }
+    );
+
+    expect(payload.properties["Workflow Status"]).toEqual({ select: { name: "Needs Research" } });
+    expect(payload.properties["Brief Allowed"]).toEqual({ checkbox: false });
+    expect(payload.properties["Research Task Status"]).toEqual({ select: { name: "open" } });
+    expect(payload.properties["Next Action"]).toEqual({ select: { name: "Make Research Task" } });
+  });
+
+  it("maps rejected candidates to rejected workflow properties", () => {
+    const payload = buildCandidatePagePayload(
+      {
+        ...candidate,
+        verificationStatus: "rejected",
+        briefAllowed: false,
+        verificationNotes: "Source does not support claim."
+      },
+      {
+        database_id: "test-database-id"
+      }
+    );
+
+    expect(payload.properties["Workflow Status"]).toEqual({ select: { name: "Rejected" } });
+    expect(payload.properties["Brief Allowed"]).toEqual({ checkbox: false });
+    expect(payload.properties["Writing Brief Status"]).toEqual({ select: { name: "blocked" } });
+    expect(payload.properties["Next Action"]).toEqual({ select: { name: "Reject" } });
+  });
+
+  it("includes evidence boundary fields", () => {
+    const payload = buildCandidatePagePayload(candidate, {
+      database_id: "test-database-id"
+    });
+
+    expect(payload.properties["Confirmed Facts"]).toEqual({
+      rich_text: [{ text: { content: "Entity identified: test brand" } }]
+    });
+    expect(payload.properties["Reasonable Inferences"]).toEqual({
+      rich_text: [{ text: { content: "The offline store may be a trust signal." } }]
+    });
+    expect(payload.properties["Needs Verification"]).toEqual({
+      rich_text: [{ text: { content: "Check official launch page" } }]
+    });
+  });
+
+  it("builds research task Notion properties", () => {
+    const task: ResearchTask = {
+      taskId: "research-task:candidate-telegram-1",
+      candidateId: "candidate-telegram-1",
+      taskTitle: "Research needed",
+      taskReason: "Evidence is missing.",
+      missingFields: ["evidence snippet or evidence paragraph reference"],
+      requiredSources: ["Official source"],
+      verificationQuestions: ["Which source supports the feature?"],
+      suggestedSearchQueries: ["test brand official feature"],
+      priority: "medium",
+      completionCriteria: ["Attach evidence."],
+      status: "open",
+      createdAt: "2026-07-03T00:00:00.000Z"
+    };
+
+    expect(buildResearchTaskNotionProperties(task, candidate)).toMatchObject({
+      "Candidate ID": {
+        rich_text: [{ text: { content: "candidate-telegram-1" } }]
+      },
+      "Research Task Status": { select: { name: "open" } },
+      "Brief Allowed": { checkbox: false },
+      "Next Action": { select: { name: "Make Research Task" } }
     });
   });
 });

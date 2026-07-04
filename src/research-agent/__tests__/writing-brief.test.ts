@@ -15,6 +15,7 @@ import type { ScoutCandidate } from "../types.ts";
 function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
   return {
     id: overrides.id ?? "candidate-writing-1",
+    candidateId: overrides.candidateId ?? overrides.id ?? "candidate-writing-1",
     discoveredDate: "2026-07-03",
     status: "new",
     feedbackLabels: [],
@@ -52,6 +53,7 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     evidenceSnippet: overrides.evidenceSnippet ?? "친구 체크인을 제공한다.",
     evidenceType: overrides.evidenceType ?? "article",
     verificationStatus: overrides.verificationStatus ?? "verified",
+    briefAllowed: overrides.briefAllowed ?? (overrides.verificationStatus !== "needs-research"),
     verificationNotes: overrides.verificationNotes
   };
 }

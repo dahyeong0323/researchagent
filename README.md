@@ -34,6 +34,7 @@ npm.cmd install
 
 ```powershell
 npm run scout:local
+npm run scout:url -- --url "https://example.org/article" --dry-run
 npm run scout:local -- --limit 5
 npm run scout:local:llm
 npm run scout:notion -- --dry-run
@@ -41,6 +42,8 @@ npm run scout:feedback
 npm run export:selected
 npm run feedback:notion
 npm run telegram:poll
+npm run daily:dry
+npm run daily
 npm run typecheck
 npm test
 ```
@@ -63,6 +66,12 @@ SCOUT_FEEDBACK_PATH=data/research-agent/feedback.sample.json
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 TELEGRAM_ENABLED=0
+MANUAL_URL_FETCH_TIMEOUT_MS=10000
+RESEARCH_AGENT_FEEDS_PATH=data/research-agent/feeds.sample.json
+RESEARCH_AGENT_MANUAL_INBOX_PATH=data/research-agent/manual-inbox.json
+RESEARCH_AGENT_RUNS_DIR=data/research-agent/runs
+FETCH_TIMEOUT_MS=12000
+DISALLOW_LINKEDIN_URLS=true
 ```
 
 `OPENAI_API_KEY` is only required for LLM enrichment. `NOTION_API_KEY` and `NOTION_DATABASE_ID` or `NOTION_DATA_SOURCE_ID` are only required for live Notion writes or feedback sync.
@@ -87,6 +96,38 @@ Change input:
 ```powershell
 npm run scout:local -- --input data/research-agent/raw_candidates.sample.json
 ```
+
+## Manual URL Collector
+
+Collect a single public article or official page into a `RawSourceItem` and `SourceDocument`:
+
+```powershell
+npm run scout:url -- --url "https://example.org/article" --dry-run
+```
+
+The collector only accepts public `http` or `https` URLs. It rejects LinkedIn URLs, empty pages, non-HTML responses, and pages that appear to require login, subscription, or paywall access. It does not use browser automation.
+
+## Daily Batch
+
+Run the daily batch locally in dry-run mode:
+
+```powershell
+npm run daily:dry
+```
+
+The daily batch loads RSS feed config, optional manual inbox items, extracts candidates, applies verification/scoring/dedupe, writes Notion payloads in dry-run mode, and saves a run artifact:
+
+```text
+data/research-agent/runs/{YYYY-MM-DD}.json
+```
+
+Live daily mode is intended for GitHub Actions or a controlled local run:
+
+```powershell
+npm run daily
+```
+
+Collector errors are captured in the run artifact and do not crash the whole run. GitHub Actions is only the batch job runner. Telegram long polling remains local/dev only through `npm run telegram:poll`; production Telegram callbacks should use a separately deployed webhook worker later.
 
 ## LLM Enrichment
 
@@ -173,6 +214,43 @@ npm run export:selected:llm
 The LLM pass sharpens the brief before it reaches the writing agent. It focuses on concrete tension, non-obvious insight, business mechanism, consumer psychology, weak theses to avoid, and evidence that still needs checking. If `OPENAI_API_KEY` is missing or the LLM call fails, the exporter falls back to the local rule-based v2 brief.
 
 Only `verified` candidates produce normal Writing Briefs. `needs-research` candidates produce Research Task Markdown instead, so the agent never invents a missing service or brand name.
+
+## Writing Agent Handoff
+
+Research Agent handoff is deliberately narrow:
+
+- verified + `briefAllowed` candidates only
+- evidence snippet required
+- `humanApprovalRequired: true`
+- prohibited claims included from unresolved verification needs
+- no LinkedIn posting, likes, comments, DMs, or browser automation
+
+See `docs/writing-agent-handoff.md`.
+
+## What This Agent Does
+
+- Collects public/manual business signals
+- Extracts entities and evidence
+- Scores and stores candidates
+- Sends candidates to Telegram for human review
+- Generates Research Tasks or Writing Briefs
+
+## What This Agent Does Not Do
+
+- Does not scrape LinkedIn
+- Does not auto-post to LinkedIn
+- Does not auto-like/comment/DM
+- Does not generate full briefs for unverified candidates
+
+## Recommended Workflow
+
+1. `npm run daily:dry`
+2. Review Notion candidates
+3. Use Telegram buttons
+4. Make research task for incomplete candidate
+5. Make writing brief only for verified candidate
+6. Hand off brief to writing agent
+7. Human writes/approves final post manually
 
 Generated briefs are written to:
 

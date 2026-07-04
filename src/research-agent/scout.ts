@@ -58,6 +58,7 @@ export function processRawCandidates(
 
       const candidate: ScoutCandidate = {
         id: item.id ?? item.sourceUrl,
+        candidateId: item.id ?? item.sourceUrl,
         discoveredDate: item.collectedAt.slice(0, 10),
         status: "new",
         feedbackLabels: [],
@@ -75,10 +76,12 @@ export function processRawCandidates(
         visitPossible,
         sourceUrl: item.sourceUrl,
         sourceName: item.sourceName,
+        sourcePublishedAt: item.sourcePublishedAt ?? item.publishedAt,
         nextAction: nextActionFor(score, visitPossible),
         entityType: "unknown",
         evidenceType: "unknown",
-        verificationStatus: "needs-research"
+        verificationStatus: "needs-research",
+        briefAllowed: false
       };
 
       return applyVerificationToCandidate(candidate, verifySourceItem(item));

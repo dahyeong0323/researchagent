@@ -1,0 +1,21 @@
+{
+  "runId": "research-agent:2026-07-04",
+  "startedAt": "2026-07-04T02:50:45.678Z",
+  "finishedAt": "2026-07-04T02:50:45.851Z",
+  "sourceCounts": {
+    "rss": 0,
+    "manualRaw": 0,
+    "manualUrl": 0
+  },
+  "candidateCounts": {
+    "total": 0,
+    "verified": 0,
+    "needsResearch": 0,
+    "rejected": 0
+  },
+  "notionWritten": 0,
+  "telegramSent": 0,
+  "errors": [
+    "rss: fetch failed"
+  ]
+}

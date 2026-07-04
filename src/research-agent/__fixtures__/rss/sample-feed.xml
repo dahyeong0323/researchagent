@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Retail Feed</title>
+    <item>
+      <guid>acme-launch-1</guid>
+      <title>Acme Beauty launches refill station pop-up</title>
+      <link>https://news.acme.test/acme-refill-pop-up</link>
+      <pubDate>Wed, 01 Jul 2026 09:00:00 GMT</pubDate>
+      <description>Acme Beauty launched a refill station pop-up in Seoul to test lower-waste shopping rituals.</description>
+    </item>
+    <item>
+      <guid>macro-1</guid>
+      <title>Global economy outlook shifts consumer sentiment</title>
+      <link>https://news.acme.test/global-economy-outlook</link>
+      <pubDate>Wed, 01 Jul 2026 10:00:00 GMT</pubDate>
+      <description>A generic macro trend article about consumer sentiment and interest rates.</description>
+    </item>
+    <item>
+      <guid>pr-1</guid>
+      <title>Acme Holdings announces financial results</title>
+      <link>https://news.acme.test/acme-financial-results</link>
+      <pubDate>Wed, 01 Jul 2026 11:00:00 GMT</pubDate>
+      <description>Acme Holdings announces financial results and earnings call details.</description>
+    </item>
+    <item>
+      <guid>acme-launch-1</guid>
+      <title>Acme Beauty launches refill station pop-up</title>
+      <link>https://news.acme.test/acme-refill-pop-up?utm=duplicate</link>
+      <pubDate>Wed, 01 Jul 2026 09:00:00 GMT</pubDate>
+      <description>Duplicate entry for the same launch.</description>
+    </item>
+  </channel>
+</rss>

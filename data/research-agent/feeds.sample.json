@@ -1,0 +1,10 @@
+[
+  {
+    "feedName": "Example Retail News",
+    "feedUrl": "https://example.org/rss.xml",
+    "sourceCategory": "retail_brand",
+    "country": "GLOBAL",
+    "language": "en",
+    "reliabilityTier": 3
+  }
+]
