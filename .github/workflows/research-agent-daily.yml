@@ -16,12 +16,12 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run daily
+      - run: npm run daily:dry
         env:
-          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
-          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
-          NOTION_DATA_SOURCE_ID: ${{ secrets.NOTION_DATA_SOURCE_ID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_ENABLED: "1"
           RESEARCH_AGENT_FEEDS_PATH: data/research-agent/feeds.sample.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: research-agent-runs
+          path: data/research-agent/runs/*.json
+          if-no-files-found: ignore

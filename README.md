@@ -1,6 +1,6 @@
-# LinkedIn Research Agent MVP
+﻿# LinkedIn Research Agent MVP
 
-LinkedIn Research Agent is a local-first scout for Korean LinkedIn business-observation ideas. It finds candidate topics, turns them into short "왜 굳이?" briefs, ranks them, optionally saves them to Notion, learns from human feedback, and exports selected candidates into writing briefs.
+LinkedIn Research Agent is a local-first scout for Korean LinkedIn business-observation ideas. It finds candidate topics, turns them into short "??援녹씠?" briefs, ranks them, optionally saves them to Notion, learns from human feedback, and exports selected candidates into writing briefs.
 
 This agent decides what might be worth writing about. The existing writing agent still decides how to draft the post.
 
@@ -102,10 +102,22 @@ npm run scout:local -- --input data/research-agent/raw_candidates.sample.json
 Collect a single public article or official page into a `RawSourceItem` and `SourceDocument`:
 
 ```powershell
-npm run scout:url -- --url "https://example.org/article" --dry-run
+npm run scout:url -- "https://example.org/article" --dry-run
 ```
 
 The collector only accepts public `http` or `https` URLs. It rejects LinkedIn URLs, empty pages, non-HTML responses, and pages that appear to require login, subscription, or paywall access. It does not use browser automation.
+
+If the page contains extractable entity/evidence, the manual URL flow uses the generated document candidate only. If no entity/evidence can be extracted, it creates one `needs-research` fallback candidate so the URL is not silently dropped.
+
+## RSS Collector
+
+Collect configured RSS feeds in dry-run mode:
+
+```powershell
+npm run scout:rss -- --dry-run
+```
+
+RSS entries are still available as raw source items, and the enriched path can also fetch each linked public article page, parse it into a `SourceDocument`, and generate verified candidates when the article contains a concrete entity, observed feature, and evidence sentence. If a linked article fetch or parse fails, the error is captured and the RSS item remains a `needs-research` fallback candidate rather than crashing the run.
 
 ## Daily Batch
 
@@ -115,7 +127,7 @@ Run the daily batch locally in dry-run mode:
 npm run daily:dry
 ```
 
-The daily batch loads RSS feed config, optional manual inbox items, extracts candidates, applies verification/scoring/dedupe, writes Notion payloads in dry-run mode, and saves a run artifact:
+The daily batch loads RSS feed config, enriches RSS article pages when possible, reads optional manual inbox items, extracts candidates, applies verification/scoring/dedupe, writes Notion payloads in dry-run mode, and saves a run artifact:
 
 ```text
 data/research-agent/runs/{YYYY-MM-DD}.json
@@ -127,7 +139,7 @@ Live daily mode is intended for GitHub Actions or a controlled local run:
 npm run daily
 ```
 
-Collector errors are captured in the run artifact and do not crash the whole run. GitHub Actions is only the batch job runner. Telegram long polling remains local/dev only through `npm run telegram:poll`; production Telegram callbacks should use a separately deployed webhook worker later.
+Collector errors, including full article fetch failures, are captured in the run artifact and do not crash the whole run. GitHub Actions runs the safe dry-run batch by default. Telegram long polling remains local/dev only through `npm run telegram:poll`; production Telegram callbacks should use a separately deployed webhook worker later.
 
 ## LLM Enrichment
 
@@ -151,17 +163,26 @@ Live writes require Notion environment variables and a Notion database whose pro
 
 The Notion database must include a `Candidate ID` rich text property. The agent writes `ScoutCandidate.id` there so future Telegram callbacks can find and update the same candidate.
 
-The database must also include verification fields: `서비스/브랜드명`, `관찰된 기능/변화`, `검증 상태`, `근거 스니펫`, `근거 유형`, and `검증 메모`. Candidates from sample URLs or without a real service, brand, company, app, or store name are marked `needs-research`.
+The database must also include verification fields: `?쒕퉬??釉뚮옖?쒕챸`, `愿李곕맂 湲곕뒫/蹂??, `寃利??곹깭`, `洹쇨굅 ?ㅻ땲??, `洹쇨굅 ?좏삎`, and `寃利?硫붾え`. Candidates from sample URLs or without a real service, brand, company, app, or store name are marked `needs-research`.
 
 ## Telegram Notifications
 
-After a live Notion write, enable Telegram notifications to receive the saved Top 5 candidates with `Selected`, `Shortlisted`, and `Rejected` buttons:
+After a live Notion write, enable Telegram notifications to receive the saved Top 5 candidates with `Selected`, `Shortlisted`, `Rejected`, and `Needs Research` buttons:
 
 ```powershell
 npm run scout:notion -- --llm --limit 5
 ```
 
-Telegram buttons emit callback data such as `selected:<candidateId>` and `brief:<candidateId>`, which the local polling worker can process into Notion status updates or local writing brief files. Telegram summaries show `서비스/브랜드명` for verified candidates and mark unresolved items as `needs-research`.
+Telegram buttons emit callback data in the current namespaced format:
+
+- `status:selected:<candidateId>`
+- `status:shortlisted:<candidateId>`
+- `status:rejected:<candidateId>`
+- `status:needs-research:<candidateId>`
+- `brief:create:<candidateId>`
+- `research-task:create:<candidateId>`
+
+The local polling worker processes these into Notion status updates, Writing Brief files, or Research Task files. Telegram summaries show entity/evidence for verified candidates and `missingFields` for unresolved items.
 
 Run the local polling worker to process Telegram button clicks and update Notion candidate statuses:
 
@@ -175,7 +196,7 @@ For one polling pass during local testing:
 npm run telegram:poll -- --once
 ```
 
-The poller only handles Telegram `callback_query` updates. It updates the Notion `상태` property by matching the `Candidate ID` property, offers a `Writing Brief 만들기` button after `Selected`, and stores its Telegram offset in `data/research-agent/telegram-offset.json` to avoid duplicate processing. Brief callbacks create Markdown files in `data/research-agent/writing-briefs/`. It does not trigger the writing agent, posting, LinkedIn activity, or any other automation.
+The poller only handles Telegram `callback_query` updates. It updates the Notion status property by matching the `Candidate ID` property and stores its Telegram offset in `data/research-agent/telegram-offset.json` to avoid duplicate processing. `brief:create:<candidateId>` creates a normal Writing Brief only when the candidate is verified and `briefAllowed`; otherwise the export path creates a Research Task instead. It does not trigger posting, LinkedIn activity, or any other automation.
 
 ## Feedback Loop
 

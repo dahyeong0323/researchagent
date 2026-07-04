@@ -2,6 +2,12 @@
 
 The Research Agent does not write final LinkedIn posts and does not publish anything. It can only hand a verified Writing Brief to a separate writing agent after strict evidence checks pass.
 
+The implementation lives in `src/research-agent/writing-agent-handoff.ts` and exposes:
+
+- `assertWritingAgentHandoffAllowed(candidate)`
+- `buildWritingAgentHandoffPayload(candidate, brief)`
+- `writeWritingAgentHandoffPayload(candidate, brief, options)`
+
 ## Boundary
 
 - Only `verificationStatus === "verified"` candidates can be handed off.

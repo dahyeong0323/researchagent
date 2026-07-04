@@ -203,6 +203,13 @@ Prompt 3 adds workflow fields so Notion can separate candidate triage, verificat
 - `needs-research`: `Brief Allowed = false`, `Workflow Status = Needs Research`, `Research Task Status = open`, `Next Action = Make Research Task`.
 - `rejected`: `Brief Allowed = false`, `Workflow Status = Rejected`, `Writing Brief Status = blocked`, `Next Action = Reject`.
 
+### Select Values Used By Code
+
+- `Workflow Status`: `New`, `Needs Research`, `Rejected`, `Selected`, `Shortlisted`, `Written`, `Published`.
+- `Writing Brief Status`: `ready`, `not-ready`, `blocked`.
+- `Research Task Status`: `none`, `open`, `in-progress`, `resolved`, `cancelled`.
+- `Next Action`: `Make Writing Brief`, `Make Research Task`, `Reject`, `Wait`.
+
 ### Recommended Views
 
 - `Inbox`: all new candidates sorted by score and discovered date.

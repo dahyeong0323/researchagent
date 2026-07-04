@@ -7,7 +7,8 @@ import { dedupeCandidates } from "./dedupe.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { processRawCandidates } from "./scout.ts";
-import { collectManualUrl, collectRssFeeds } from "./sources/index.ts";
+import { candidatesFromDocumentOrFallback } from "./source-candidates.ts";
+import { collectManualUrl, collectRssFeeds, collectRssFeedsWithDocuments } from "./sources/index.ts";
 import { assertFeedConfigs, type FeedConfig } from "./sources/feed-config.ts";
 import { sendTelegramDailySummary } from "./telegram.ts";
 import type { RawSourceItem, ScoutCandidate } from "./types.ts";
@@ -48,6 +49,7 @@ export type DailyRunOptions = {
 
 export type DailyRunDependencies = {
   collectRssFeeds?: typeof collectRssFeeds;
+  collectRssFeedsWithDocuments?: typeof collectRssFeedsWithDocuments;
   collectManualUrl?: typeof collectManualUrl;
   writeCandidatesToNotion?: typeof writeCandidatesToNotion;
   sendTelegramDailySummary?: typeof sendTelegramDailySummary;
@@ -174,19 +176,29 @@ export async function runDaily(
   const errors: string[] = [];
   const sourceCounts: Record<string, number> = {};
   const rawItems: RawSourceItem[] = [];
-  const documentCandidates: ScoutCandidate[] = [];
+  const directCandidates: ScoutCandidate[] = [];
   const rssCollector = dependencies.collectRssFeeds ?? collectRssFeeds;
+  const rssDocumentCollector = dependencies.collectRssFeedsWithDocuments ?? collectRssFeedsWithDocuments;
   const manualCollector = dependencies.collectManualUrl ?? collectManualUrl;
 
   try {
     const feedValue = await readJsonIfExists(options.feedsPath ?? DEFAULT_FEEDS_PATH);
     if (feedValue) {
       assertFeedConfigs(feedValue);
-      const rssItems = await rssCollector(feedValue as FeedConfig[], { now });
-      rawItems.push(...rssItems);
-      sourceCounts.rss = rssItems.length;
+      if (dependencies.collectRssFeeds) {
+        const rssItems = await rssCollector(feedValue as FeedConfig[], { now });
+        rawItems.push(...rssItems);
+        sourceCounts.rss = rssItems.length;
+      } else {
+        const rssResult = await rssDocumentCollector(feedValue as FeedConfig[], { now });
+        directCandidates.push(...rssResult.candidates);
+        sourceCounts.rss = rssResult.rawSourceItems.length;
+        sourceCounts.rssDocuments = rssResult.sourceDocuments.length;
+        errors.push(...rssResult.errors);
+      }
     } else {
       sourceCounts.rss = 0;
+      sourceCounts.rssDocuments = 0;
     }
   } catch (error) {
     sourceCounts.rss = 0;
@@ -203,8 +215,12 @@ export async function runDaily(
     for (const url of manualInbox.urls) {
       try {
         const collected = await manualCollector(url, { now });
-        rawItems.push(collected.rawSourceItem);
-        documentCandidates.push(...generateCandidatesFromDocument(collected.sourceDocument));
+        const documentCandidates = generateCandidatesFromDocument(collected.sourceDocument);
+        if (documentCandidates.length > 0) {
+          directCandidates.push(...documentCandidates);
+        } else {
+          directCandidates.push(...candidatesFromDocumentOrFallback(collected.sourceDocument, collected.rawSourceItem));
+        }
         sourceCounts.manualUrl += 1;
       } catch (error) {
         errors.push(`manual-url:${url}: ${error instanceof Error ? error.message : String(error)}`);
@@ -217,7 +233,7 @@ export async function runDaily(
   }
 
   const rawCandidates = processRawCandidates(dedupeCandidates(rawItems), rawItems.length || limit);
-  const candidates = sortCandidates([...rawCandidates, ...documentCandidates]).slice(0, limit);
+  const candidates = sortCandidates([...rawCandidates, ...directCandidates]).slice(0, limit);
   const counts = candidateCounts(candidates);
 
   let notionWritten = 0;

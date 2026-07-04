@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runDaily } from "../daily.ts";
 import type { FeedConfig } from "../sources/feed-config.ts";
-import type { RawSourceItem } from "../types.ts";
+import type { RawSourceItem, SourceDocument } from "../types.ts";
 
 const now = () => new Date("2026-07-04T00:00:00.000Z");
 
@@ -28,6 +28,35 @@ function verifiedRawItem(overrides: Partial<RawSourceItem> = {}): RawSourceItem 
       : "Acme Beauty launched a refill station pop-up in Seoul.",
     evidenceType: overrides.evidenceType ?? "article",
     verificationStatus: "verificationStatus" in overrides ? overrides.verificationStatus : "verified"
+  };
+}
+
+function sourceDocument(overrides: Partial<SourceDocument> = {}): SourceDocument {
+  return {
+    id: overrides.id ?? "manual-doc-1",
+    documentId: overrides.documentId ?? overrides.id ?? "manual-doc-1",
+    sourceItemId: overrides.sourceItemId ?? "manual-raw-1",
+    collectorType: "manual-url",
+    documentType: "manual-url",
+    sourceUrl: overrides.sourceUrl ?? "https://news.acme.test/manual",
+    canonicalUrl: overrides.canonicalUrl ?? overrides.sourceUrl ?? "https://news.acme.test/manual",
+    title: overrides.title ?? "Acme Beauty launches refill station pop-up",
+    siteName: overrides.siteName ?? "Example Manual News",
+    siteType: "public-web",
+    contentText: overrides.contentText ??
+      "Acme Beauty launches refill station pop-up\nAcme Beauty launched a refill station pop-up in Seoul.",
+    paragraphs: overrides.paragraphs ?? [
+      { id: "p1", index: 0, text: "Acme Beauty launches refill station pop-up" },
+      { id: "p2", index: 1, text: "Acme Beauty launched a refill station pop-up in Seoul." }
+    ],
+    sourceCategory: "manual",
+    collectedAt: "2026-07-04T00:00:00.000Z",
+    fetchedAt: "2026-07-04T00:00:00.000Z",
+    language: "en",
+    country: "GLOBAL",
+    reliabilityTier: 3,
+    fetchStatus: "success",
+    ...overrides
   };
 }
 
@@ -207,6 +236,116 @@ describe("daily batch runner", () => {
 
       expect(result.artifact.telegramSent).toBe(1);
       expect(sentCount).toBe(2);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not duplicate manual raw fallback when a document candidate exists", async () => {
+    const paths = await tempRunPaths();
+    try {
+      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.test/manual"])}\n`, "utf8");
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [],
+          collectManualUrl: async () => ({
+            rawSourceItem: verifiedRawItem({
+              id: "manual-raw-1",
+              collectorType: "manual-url",
+              sourceUrl: "https://news.acme.test/manual"
+            }),
+            sourceDocument: sourceDocument()
+          })
+        }
+      );
+
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0]?.originDocumentIds).toEqual(["manual-doc-1"]);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates one needs-research fallback candidate when manual document extraction finds no entity", async () => {
+    const paths = await tempRunPaths();
+    try {
+      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.test/plain"])}\n`, "utf8");
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [],
+          collectManualUrl: async () => ({
+            rawSourceItem: verifiedRawItem({
+              id: "manual-raw-plain",
+              collectorType: "manual-url",
+              title: "plain update",
+              sourceUrl: "https://news.acme.test/plain",
+              rawSummary: "lower waste shopping rituals without a named entity",
+              entityName: undefined,
+              entityType: "unknown",
+              observedFeature: undefined,
+              evidenceSnippet: undefined,
+              evidenceType: "unknown",
+              verificationStatus: "needs-research"
+            }),
+            sourceDocument: sourceDocument({
+              id: "manual-doc-plain",
+              documentId: "manual-doc-plain",
+              title: "plain update",
+              contentText: "lower waste shopping rituals without a named entity",
+              paragraphs: [{ id: "p1", index: 0, text: "lower waste shopping rituals without a named entity" }]
+            })
+          })
+        }
+      );
+
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0]?.verificationStatus).toBe("needs-research");
+      expect(result.candidates[0]?.briefAllowed).toBe(false);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("captures RSS article enrichment errors without crashing the run", async () => {
+    const paths = await tempRunPaths();
+    try {
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeedsWithDocuments: async () => ({
+            rawSourceItems: [verifiedRawItem({ evidenceSnippet: undefined, verificationStatus: "needs-research" })],
+            sourceDocuments: [],
+            candidates: [],
+            errors: ["rss-entry:https://news.acme.test/acme-refill: article unavailable"]
+          })
+        }
+      );
+
+      expect(result.artifact.errors.some((error) => error.includes("article unavailable"))).toBe(true);
+      expect(result.artifact.candidateCounts.total).toBe(0);
     } finally {
       await rm(paths.root, { recursive: true, force: true });
     }

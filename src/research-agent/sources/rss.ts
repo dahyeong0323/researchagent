@@ -1,12 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { RawSourceItem } from "../types.ts";
+import { candidatesFromDocumentOrFallback } from "../source-candidates.ts";
+import { processRawCandidates } from "../scout.ts";
+import type { RawSourceItem, ScoutCandidate, SourceDocument } from "../types.ts";
+import { collectManualUrl } from "./manual-url.ts";
 import { checksum, normalizeWhitespace } from "./source-utils.ts";
 import type { FeedConfig } from "./feed-config.ts";
 
-type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{
+type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<{
   ok: boolean;
   status: number;
+  statusText?: string;
+  headers?: {
+    get(name: string): string | null;
+  };
   text(): Promise<string>;
 }>;
 
@@ -14,6 +21,13 @@ type CollectRssOptions = {
   fetchImpl?: FetchLike;
   timeoutMs?: number;
   now?: Date;
+};
+
+export type RssDocumentCollectionResult = {
+  rawSourceItems: RawSourceItem[];
+  sourceDocuments: SourceDocument[];
+  candidates: ScoutCandidate[];
+  errors: string[];
 };
 
 type ParsedEntry = {
@@ -196,4 +210,75 @@ export async function collectRssFeeds(
   }
 
   return items;
+}
+
+function sourceDocumentLanguage(value: string | undefined): SourceDocument["language"] {
+  return value === "ko" || value === "en" || value === "unknown" ? value : "unknown";
+}
+
+function enrichSourceDocument(
+  document: SourceDocument,
+  rawItem: RawSourceItem,
+  feed: FeedConfig
+): SourceDocument {
+  return {
+    ...document,
+    sourceItemId: rawItem.id,
+    collectorType: "rss",
+    documentType: "rss",
+    sourceCategory: feed.sourceCategory,
+    language: sourceDocumentLanguage(feed.language ?? document.language),
+    country: feed.country ?? document.country,
+    reliabilityTier: feed.reliabilityTier,
+    publishedAt: document.publishedAt ?? rawItem.sourcePublishedAt,
+    siteName: document.siteName || feed.feedName
+  };
+}
+
+export async function collectRssFeedsWithDocuments(
+  configs: FeedConfig[],
+  options: CollectRssOptions = {}
+): Promise<RssDocumentCollectionResult> {
+  const collectedAt = (options.now ?? new Date()).toISOString();
+  const rawSourceItems: RawSourceItem[] = [];
+  const sourceDocuments: SourceDocument[] = [];
+  const candidates: ScoutCandidate[] = [];
+  const errors: string[] = [];
+
+  for (const feed of configs) {
+    let entries: ParsedEntry[];
+    try {
+      const xml = await fetchFeed(feed, options);
+      entries = uniqueEntries(parseFeedEntries(xml).filter(isQualityEntry));
+    } catch (error) {
+      errors.push(`rss:${feed.feedName}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+
+    for (const entry of entries) {
+      const rawItem = rawItemFromEntry(entry, feed, collectedAt);
+      rawSourceItems.push(rawItem);
+
+      try {
+        const collected = await collectManualUrl(entry.link, {
+          fetchImpl: options.fetchImpl,
+          timeoutMs: options.timeoutMs,
+          now: options.now
+        });
+        const sourceDocument = enrichSourceDocument(collected.sourceDocument, rawItem, feed);
+        sourceDocuments.push(sourceDocument);
+        candidates.push(...candidatesFromDocumentOrFallback(sourceDocument, rawItem));
+      } catch (error) {
+        errors.push(`rss-entry:${entry.link}: ${error instanceof Error ? error.message : String(error)}`);
+        candidates.push(...processRawCandidates([rawItem], 1));
+      }
+    }
+  }
+
+  return {
+    rawSourceItems,
+    sourceDocuments,
+    candidates,
+    errors
+  };
 }

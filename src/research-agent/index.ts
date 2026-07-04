@@ -8,7 +8,8 @@ import { readFeedbackMemory } from "./feedback.ts";
 import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { scoutToMarkdown, scoutToMarkdownWithLlm } from "./scout.ts";
 import { processRawCandidates, processRawCandidatesWithLlm } from "./scout.ts";
-import { assertFeedConfigs, collectManualUrl, collectRssFeeds } from "./sources/index.ts";
+import { candidatesFromDocumentOrFallback } from "./source-candidates.ts";
+import { assertFeedConfigs, collectManualUrl, collectRssFeedsWithDocuments } from "./sources/index.ts";
 import { sendTelegramDailySummary } from "./telegram.ts";
 import type { FeedConfig } from "./sources/index.ts";
 import type { RawSourceItem } from "./types.ts";
@@ -123,18 +124,16 @@ async function main(): Promise<void> {
     const input = await readFile(resolve(options.feedsPath), "utf8");
     const parsed: unknown = JSON.parse(input);
     assertFeedConfigs(parsed);
-    const rawItems = await collectRssFeeds(parsed as FeedConfig[]);
+    const rssResult = await collectRssFeedsWithDocuments(parsed as FeedConfig[]);
 
     if (options.dryRun) {
-      process.stdout.write(`${JSON.stringify({ rawSourceItems: rawItems }, null, 2)}\n`);
+      process.stdout.write(`${JSON.stringify(rssResult, null, 2)}\n`);
       return;
     }
 
     const feedbackMemory = await readFeedbackMemory(options.feedbackPath);
     if (options.useNotion) {
-      const candidates = options.useLlm
-        ? await processRawCandidatesWithLlm(rawItems, options.limit, feedbackMemory)
-        : processRawCandidates(rawItems, options.limit, feedbackMemory);
+      const candidates = rssResult.candidates.slice(0, options.limit);
       const results = await writeCandidatesToNotion(candidates, readNotionConfig(options.dryRun));
       const successCount = results.filter((result) => result.ok).length;
       const failureCount = results.length - successCount;
@@ -144,9 +143,11 @@ async function main(): Promise<void> {
       return;
     }
 
-    const markdown = options.useLlm
-      ? await scoutToMarkdownWithLlm(rawItems, options.date, options.limit, feedbackMemory)
-      : scoutToMarkdown(rawItems, options.date, options.limit, feedbackMemory);
+    const markdown = rssResult.candidates.length > 0
+      ? renderDailyScoutMarkdown(rssResult.candidates.slice(0, options.limit), options.date)
+      : options.useLlm
+      ? await scoutToMarkdownWithLlm(rssResult.rawSourceItems, options.date, options.limit, feedbackMemory)
+      : scoutToMarkdown(rssResult.rawSourceItems, options.date, options.limit, feedbackMemory);
     process.stdout.write(markdown);
     return;
   }
@@ -155,7 +156,10 @@ async function main(): Promise<void> {
     const collected = await collectManualUrl(options.manualUrl);
     const rawItems = generateRawSourceItemsFromDocument(collected.sourceDocument);
     const scoutRawItems = rawItems.length > 0 ? rawItems : [collected.rawSourceItem];
-    const documentCandidates = generateCandidatesFromDocument(collected.sourceDocument).slice(0, options.limit);
+    const documentCandidates = candidatesFromDocumentOrFallback(
+      collected.sourceDocument,
+      collected.rawSourceItem
+    ).slice(0, options.limit);
     if (options.dryRun) {
       process.stdout.write(
         `${JSON.stringify(
