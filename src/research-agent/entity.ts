@@ -14,7 +14,19 @@ const genericEntityNames = new Set([
   "a startup",
   "a company",
   "some brand",
-  "meditation app"
+  "meditation app",
+  "unknown",
+  "sample brand",
+  "example brand",
+  "this service",
+  "this company",
+  "generic startup",
+  "명상 앱",
+  "어떤 서비스",
+  "어떤 브랜드",
+  "한 스타트업",
+  "서비스명",
+  "브랜드명"
 ]);
 
 const jsonLdEntityTypes = new Set(["Organization", "Product", "SoftwareApplication"]);
@@ -56,6 +68,57 @@ function normalizedKey(value: string): string {
   return normalizeName(value).toLowerCase();
 }
 
+function contextFor(document: SourceDocument): string {
+  return [
+    document.title,
+    document.description,
+    document.siteName,
+    document.contentText.slice(0, 1200)
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function inferEntityType(displayName: string, document: SourceDocument): EntityType {
+  const name = normalizedKey(displayName);
+  const context = contextFor(document);
+
+  if (/\b(app|ios|android|mobile app|software|saas)\b/u.test(context)) {
+    return "app";
+  }
+
+  if (/\b(service|platform|subscription|membership)\b/u.test(context)) {
+    return "service";
+  }
+
+  if (/\b(store|shop|retail|pop-?up|offline|flagship)\b/u.test(context) || /매장|팝업|스토어/u.test(context)) {
+    return "brand";
+  }
+
+  if (/\b(brand|beauty|fashion|fnb|restaurant|cafe)\b/u.test(context) || /브랜드|뷰티/u.test(context)) {
+    return "brand";
+  }
+
+  if (/\b(company|startup|raises|raised|funding|investment|inc\.?|corp\.?|holdings)\b/u.test(context)) {
+    return "company";
+  }
+
+  if (/\b(founder|ceo|creator|artist|investor)\b/u.test(context)) {
+    return "person";
+  }
+
+  if (["headspace", "calm", "duolingo"].includes(name)) {
+    return "app";
+  }
+
+  if (["olive better", "daiso", "다이소"].includes(name)) {
+    return "brand";
+  }
+
+  return "unknown";
+}
+
 function entityIdFor(name: string): string {
   return `entity:${normalizedKey(name).replace(/[^a-z0-9가-힣]+/giu, "-").replace(/^-|-$/g, "")}`;
 }
@@ -66,7 +129,11 @@ export function isGenericEntityName(name: string | undefined): boolean {
   }
 
   const normalized = normalizedKey(name);
-  return normalized.length === 0 || genericEntityNames.has(normalized);
+  return (
+    normalized.length === 0 ||
+    genericEntityNames.has(normalized) ||
+    /\b(trend report|market report|industry report|weekly report|daily report)\b/u.test(normalized)
+  );
 }
 
 function createEntity(
@@ -74,7 +141,8 @@ function createEntity(
   resolutionMethod: Entity["resolutionMethod"],
   confidence: number,
   entityType: EntityType = "unknown",
-  aliases: string[] = []
+  aliases: string[] = [],
+  sourceParagraphIds: string[] = []
 ): Entity | undefined {
   const normalized = normalizeName(displayName);
   if (isGenericEntityName(normalized)) {
@@ -87,6 +155,7 @@ function createEntity(
     displayName: normalized,
     entityType,
     aliases: aliases.map(normalizeName).filter((alias) => !isGenericEntityName(alias)),
+    sourceParagraphIds,
     confidence,
     resolutionMethod
   };
@@ -180,13 +249,14 @@ function extractTitleEntity(document: SourceDocument): Entity | undefined {
   for (const trigger of titleTriggers) {
     const index = lowerTitle.indexOf(trigger.toLowerCase());
     if (index > 1) {
-      return createEntity(title.slice(0, index), "title", 0.72);
+      const displayName = title.slice(0, index);
+      return createEntity(displayName, "title", 0.72, inferEntityType(displayName, document));
     }
   }
 
   const colonPrefix = title.split(/[:|,-]/u)[0]?.trim();
   if (colonPrefix && colonPrefix.length >= 2 && colonPrefix.length <= 60) {
-    return createEntity(colonPrefix, "title", 0.55);
+    return createEntity(colonPrefix, "title", 0.55, inferEntityType(colonPrefix, document));
   }
 
   return undefined;
@@ -195,7 +265,7 @@ function extractTitleEntity(document: SourceDocument): Entity | undefined {
 function extractRepeatedBodyEntities(document: SourceDocument): Entity[] {
   const counts = new Map<string, number>();
   const displayByKey = new Map<string, string>();
-  const pattern = /\b[A-Z][A-Za-z0-9&'.-]*(?:\s+[A-Z][A-Za-z0-9&'.-]*){0,3}\b/g;
+  const pattern = /\b[A-Z][A-Za-z0-9&'.-]*(?:[ \t]+[A-Z][A-Za-z0-9&'.-]*){0,1}\b/g;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(document.contentText)) !== null) {
@@ -211,7 +281,20 @@ function extractRepeatedBodyEntities(document: SourceDocument): Entity[] {
 
   return [...counts.entries()]
     .filter(([, count]) => count >= 2)
-    .map(([key, count]) => createEntity(displayByKey.get(key) ?? key, "body", Math.min(0.7, 0.45 + count * 0.08)))
+    .map(([key, count]) => {
+      const displayName = displayByKey.get(key) ?? key;
+      const sourceParagraphIds = document.paragraphs
+        .filter((paragraph) => normalizedKey(paragraph.text).includes(key))
+        .map((paragraph) => paragraph.id);
+      return createEntity(
+        displayName,
+        "body",
+        Math.min(0.7, 0.45 + count * 0.08),
+        inferEntityType(displayName, document),
+        [],
+        sourceParagraphIds
+      );
+    })
     .filter((entity): entity is Entity => Boolean(entity));
 }
 
@@ -224,7 +307,9 @@ export function extractEntitiesFromDocument(document: SourceDocument): Entity[] 
       hintedDocument.entityName,
       "provided",
       1,
-      hintedDocument.entityType ?? "unknown",
+      hintedDocument.entityType && hintedDocument.entityType !== "unknown"
+        ? hintedDocument.entityType
+        : inferEntityType(hintedDocument.entityName, document),
       hintedDocument.aliases ?? []
     );
     if (provided) {

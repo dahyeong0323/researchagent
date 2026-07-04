@@ -112,6 +112,7 @@ export type Entity = {
   displayName: string;
   entityType: EntityType;
   aliases: string[];
+  sourceParagraphIds?: string[];
   homepageUrl?: string;
   appStoreUrl?: string;
   playStoreUrl?: string;

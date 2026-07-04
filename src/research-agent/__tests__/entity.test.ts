@@ -41,14 +41,83 @@ describe("entity extraction", () => {
 
     const entities = extractEntitiesFromDocument(document);
 
-    expect(entities[0]?.displayName).toBe("Acme Beauty");
-    expect(entities[0]?.resolutionMethod).toBe("title");
+    expect(entities[0]).toMatchObject({
+      displayName: "Acme Beauty",
+      resolutionMethod: "title"
+    });
+  });
+
+  it("infers Headspace as an app from title and product context", () => {
+    const document = documentWith({
+      title: "Headspace launches friend check-in feature",
+      description: "The meditation app is testing a social accountability feature.",
+      contentText: "Headspace said the app feature helps members check in with friends."
+    });
+
+    const entities = extractEntitiesFromDocument(document);
+
+    expect(entities[0]).toMatchObject({
+      displayName: "Headspace",
+      entityType: "app",
+      resolutionMethod: "title"
+    });
+  });
+
+  it("extracts Olive Better as a brand from retail context", () => {
+    const document = documentWith({
+      title: "Olive Better opens a Seongsu store",
+      description: "A beauty retail brand opens an offline store.",
+      contentText: "Olive Better opened a store in Seongsu for beauty shoppers."
+    });
+
+    const entities = extractEntitiesFromDocument(document);
+
+    expect(entities[0]).toMatchObject({
+      displayName: "Olive Better",
+      entityType: "brand"
+    });
+  });
+
+  it("extracts Daiso from a Korean title trigger", () => {
+    const document = documentWith({
+      title: "다이소 launches a travel goods section",
+      contentText: "다이소는 여행용품 섹션을 확대했다."
+    });
+
+    const entities = extractEntitiesFromDocument(document);
+
+    expect(entities[0]).toMatchObject({
+      displayName: "다이소",
+      entityType: "brand"
+    });
+  });
+
+  it("extracts repeated body entities with paragraph references", () => {
+    const document = documentWith({
+      title: "Retail trend report",
+      contentText: [
+        "Acme Beauty opened a refill station in Seoul.",
+        "Acme Beauty said the store is designed around lower-waste shopping."
+      ].join("\n"),
+      paragraphs: [
+        { id: "p1", index: 0, text: "Acme Beauty opened a refill station in Seoul." },
+        { id: "p2", index: 1, text: "Acme Beauty said the store is designed around lower-waste shopping." }
+      ]
+    });
+
+    const entities = extractEntitiesFromDocument(document);
+
+    expect(entities[0]).toMatchObject({
+      displayName: "Acme Beauty",
+      resolutionMethod: "body",
+      sourceParagraphIds: ["p1", "p2"]
+    });
   });
 
   it("rejects generic entity names", () => {
     const document = documentWith({
-      title: "명상 앱 출시",
-      contentText: "명상 앱 출시 소식입니다."
+      title: "some brand launches a feature",
+      contentText: "some brand launches a feature."
     });
 
     expect(extractEntitiesFromDocument(document)).toHaveLength(0);
