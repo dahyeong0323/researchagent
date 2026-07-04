@@ -1,7 +1,7 @@
 [
   {
     "feedName": "Example Retail News",
-    "feedUrl": "https://example.org/rss.xml",
+    "feedUrl": "src/research-agent/__fixtures__/rss/sample-feed.xml",
     "sourceCategory": "retail_brand",
     "country": "GLOBAL",
     "language": "en",

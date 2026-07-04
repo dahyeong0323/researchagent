@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { RawSourceItem } from "../types.ts";
 import { checksum, normalizeWhitespace } from "./source-utils.ts";
 import type { FeedConfig } from "./feed-config.ts";
@@ -137,6 +139,10 @@ function uniqueEntries(entries: ParsedEntry[]): ParsedEntry[] {
 }
 
 async function fetchFeed(feed: FeedConfig, options: CollectRssOptions): Promise<string> {
+  if (!/^https?:\/\//iu.test(feed.feedUrl)) {
+    return readFile(resolve(feed.feedUrl), "utf8");
+  }
+
   const fetchImpl = options.fetchImpl ?? fetch;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 12000);

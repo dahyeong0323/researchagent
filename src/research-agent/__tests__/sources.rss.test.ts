@@ -40,7 +40,9 @@ describe("RSS collector", () => {
       title: "Acme Beauty launches refill station pop-up",
       sourceUrl: "https://news.acme.test/acme-refill-pop-up",
       sourceName: "Example Retail Feed",
+      sourceCategory: "retail_brand",
       sourceReliability: 4,
+      sourcePublishedAt: "2026-07-01T09:00:00.000Z",
       collectorType: "rss"
     });
   });
@@ -54,5 +56,35 @@ describe("RSS collector", () => {
     expect(items.map((item) => item.title)).toEqual([
       "Acme Beauty launches refill station pop-up"
     ]);
+  });
+
+  it("removes duplicate URLs before creating raw source items", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <guid>one</guid>
+      <title>Beta Market opens weekly grocery pickup store</title>
+      <link>https://news.acme.test/beta-pickup</link>
+      <pubDate>Wed, 01 Jul 2026 09:00:00 GMT</pubDate>
+      <description>Beta Market opened a weekly grocery pickup store in Seoul.</description>
+    </item>
+    <item>
+      <guid>two</guid>
+      <title>Beta Market opens weekly grocery pickup store</title>
+      <link>https://news.acme.test/beta-pickup</link>
+      <pubDate>Wed, 01 Jul 2026 10:00:00 GMT</pubDate>
+      <description>Beta Market opened a weekly grocery pickup store in Seoul.</description>
+    </item>
+  </channel>
+</rss>`;
+
+    const items = await collectRssFeeds(feeds, {
+      fetchImpl: fetchXml(xml),
+      now: new Date("2026-07-04T00:00:00.000Z")
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.sourceUrl).toBe("https://news.acme.test/beta-pickup");
   });
 });

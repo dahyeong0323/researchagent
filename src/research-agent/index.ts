@@ -8,8 +8,9 @@ import { readFeedbackMemory } from "./feedback.ts";
 import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { scoutToMarkdown, scoutToMarkdownWithLlm } from "./scout.ts";
 import { processRawCandidates, processRawCandidatesWithLlm } from "./scout.ts";
-import { collectManualUrl } from "./sources/index.ts";
+import { assertFeedConfigs, collectManualUrl, collectRssFeeds } from "./sources/index.ts";
 import { sendTelegramDailySummary } from "./telegram.ts";
+import type { FeedConfig } from "./sources/index.ts";
 import type { RawSourceItem } from "./types.ts";
 
 loadLocalEnv();
@@ -23,7 +24,11 @@ type CliOptions = {
   dryRun: boolean;
   feedbackPath?: string;
   manualUrl?: string;
+  useRss: boolean;
+  feedsPath: string;
 };
+
+const DEFAULT_FEEDS_PATH = process.env.RESEARCH_AGENT_FEEDS_PATH ?? "data/research-agent/feeds.sample.json";
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -37,7 +42,9 @@ function readCliOptions(argv: string[]): CliOptions {
     useLlm: process.env.SCOUT_USE_LLM === "1",
     useNotion: false,
     dryRun: false,
-    feedbackPath: process.env.SCOUT_FEEDBACK_PATH
+    feedbackPath: process.env.SCOUT_FEEDBACK_PATH,
+    useRss: false,
+    feedsPath: DEFAULT_FEEDS_PATH
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -66,6 +73,11 @@ function readCliOptions(argv: string[]): CliOptions {
       index += 1;
     } else if (arg === "--url" && next) {
       options.manualUrl = next;
+      index += 1;
+    } else if (arg === "--rss") {
+      options.useRss = true;
+    } else if (arg === "--feeds" && next) {
+      options.feedsPath = next;
       index += 1;
     }
   }
@@ -106,6 +118,38 @@ function assertRawSourceItems(value: unknown): asserts value is RawSourceItem[] 
 
 async function main(): Promise<void> {
   const options = readCliOptions(process.argv.slice(2));
+
+  if (options.useRss) {
+    const input = await readFile(resolve(options.feedsPath), "utf8");
+    const parsed: unknown = JSON.parse(input);
+    assertFeedConfigs(parsed);
+    const rawItems = await collectRssFeeds(parsed as FeedConfig[]);
+
+    if (options.dryRun) {
+      process.stdout.write(`${JSON.stringify({ rawSourceItems: rawItems }, null, 2)}\n`);
+      return;
+    }
+
+    const feedbackMemory = await readFeedbackMemory(options.feedbackPath);
+    if (options.useNotion) {
+      const candidates = options.useLlm
+        ? await processRawCandidatesWithLlm(rawItems, options.limit, feedbackMemory)
+        : processRawCandidates(rawItems, options.limit, feedbackMemory);
+      const results = await writeCandidatesToNotion(candidates, readNotionConfig(options.dryRun));
+      const successCount = results.filter((result) => result.ok).length;
+      const failureCount = results.length - successCount;
+      process.stderr.write(
+        `Notion write summary: ${successCount} ok, ${failureCount} failed, dryRun=${options.dryRun}\n`
+      );
+      return;
+    }
+
+    const markdown = options.useLlm
+      ? await scoutToMarkdownWithLlm(rawItems, options.date, options.limit, feedbackMemory)
+      : scoutToMarkdown(rawItems, options.date, options.limit, feedbackMemory);
+    process.stdout.write(markdown);
+    return;
+  }
 
   if (options.manualUrl) {
     const collected = await collectManualUrl(options.manualUrl);
