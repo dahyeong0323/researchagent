@@ -8,6 +8,7 @@ export interface WritingAgentHandoffPayload {
   entityType: EntityType;
   observedFeature: string;
   sourceUrl: string;
+  sourceUrls: string[];
   sourceName: string;
   sourcePublishedAt?: string;
   evidenceSnippet: string;
@@ -50,6 +51,10 @@ function prohibitedClaimsFor(candidate: ScoutCandidate): string[] {
   ];
 }
 
+function sourceUrlsFor(candidate: ScoutCandidate, brief: WritingBrief): string[] {
+  return [...new Set([candidate.sourceUrl, ...brief.sourceUrls].filter((url) => url.trim() !== ""))];
+}
+
 export function createWritingAgentHandoffPayload(
   candidate: ScoutCandidate,
   brief: WritingBrief,
@@ -67,6 +72,7 @@ export function createWritingAgentHandoffPayload(
     entityType: candidate.entityType,
     observedFeature: candidate.observedFeature as string,
     sourceUrl: candidate.sourceUrl,
+    sourceUrls: sourceUrlsFor(candidate, brief),
     sourceName: candidate.sourceName,
     sourcePublishedAt: candidate.sourcePublishedAt,
     evidenceSnippet: candidate.evidenceSnippet as string,

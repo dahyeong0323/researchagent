@@ -6,7 +6,7 @@ The Research Agent does not write final LinkedIn posts and does not publish anyt
 
 - Only `verificationStatus === "verified"` candidates can be handed off.
 - Only `briefAllowed === true` candidates can be handed off.
-- The payload must include `entityName`, `observedFeature`, `sourceUrl`, and `evidenceSnippet`.
+- The payload must include `entityName`, `observedFeature`, `sourceUrl`, `sourceUrls`, and `evidenceSnippet`.
 - `humanApprovalRequired` is always `true`.
 - The writing agent must not post, like, comment, DM, or automate LinkedIn activity.
 
@@ -21,6 +21,7 @@ interface WritingAgentHandoffPayload {
   entityType: EntityType;
   observedFeature: string;
   sourceUrl: string;
+  sourceUrls: string[];
   sourceName: string;
   sourcePublishedAt?: string;
   evidenceSnippet: string;

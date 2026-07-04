@@ -94,6 +94,22 @@ describe("writing agent handoff", () => {
     expect(payload.candidateId).toBe("candidate-handoff-1");
     expect(payload.entityName).toBe("Acme Beauty");
     expect(payload.evidenceSnippet).toContain("refill station");
+    expect(payload.sourceUrls).toEqual(["https://news.acme.test/acme-refill"]);
+  });
+
+  it("includes unique source URLs from candidate and brief", () => {
+    const writingBrief = brief();
+    writingBrief.sourceUrls = [
+      "https://news.acme.test/acme-refill",
+      "https://official.acme.test/refill-launch"
+    ];
+
+    const payload = createWritingAgentHandoffPayload(candidate(), writingBrief);
+
+    expect(payload.sourceUrls).toEqual([
+      "https://news.acme.test/acme-refill",
+      "https://official.acme.test/refill-launch"
+    ]);
   });
 
   it("blocks needs-research candidates", () => {
