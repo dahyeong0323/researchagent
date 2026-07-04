@@ -10,9 +10,14 @@ function nowDate(document: SourceDocument): string {
   return document.fetchedAt.slice(0, 10);
 }
 
-function rawItemFromDocument(document: SourceDocument, entityName?: string, evidence?: EvidenceCandidate): RawSourceItem {
+function rawItemFromDocument(
+  document: SourceDocument,
+  entityName?: string,
+  entityType: RawSourceItem["entityType"] = "unknown",
+  evidence?: EvidenceCandidate
+): RawSourceItem {
   return {
-    id: document.sourceItemId ?? document.documentId,
+    id: `${document.sourceItemId ?? document.documentId}:${entityName ?? "unknown"}`,
     collectorType: document.documentType,
     title: document.title,
     sourceUrl: document.canonicalUrl,
@@ -26,8 +31,8 @@ function rawItemFromDocument(document: SourceDocument, entityName?: string, evid
     sourceCategory: "manual",
     collectedAt: document.fetchedAt,
     entityName,
-    entityType: "unknown",
-    observedFeature: evidence?.trigger,
+    entityType,
+    observedFeature: evidence?.observedFeature,
     evidenceSnippet: evidence?.evidenceSnippet,
     evidenceType: evidence?.evidenceType,
     verificationStatus: evidence ? "verified" : "needs-research"
@@ -104,7 +109,14 @@ function buildCandidate(
 export function generateCandidatesFromDocument(document: SourceDocument): ScoutCandidate[] {
   return extractEntitiesFromDocument(document).map((entity) => {
     const [evidence] = extractEvidenceForEntity(document, entity);
-    const rawItem = rawItemFromDocument(document, entity.displayName, evidence);
+    const rawItem = rawItemFromDocument(document, entity.displayName, entity.entityType, evidence);
     return buildCandidate(document, rawItem, evidence, entity.entityId, entity.entityType);
+  });
+}
+
+export function generateRawSourceItemsFromDocument(document: SourceDocument): RawSourceItem[] {
+  return extractEntitiesFromDocument(document).map((entity) => {
+    const [evidence] = extractEvidenceForEntity(document, entity);
+    return rawItemFromDocument(document, entity.displayName, entity.entityType, evidence);
   });
 }

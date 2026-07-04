@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DEFAULT_INPUT_PATH, DEFAULT_TOP_LIMIT } from "./config.ts";
-import { generateCandidatesFromDocument } from "./candidate-from-document.ts";
+import { generateCandidatesFromDocument, generateRawSourceItemsFromDocument } from "./candidate-from-document.ts";
 import { renderDailyScoutMarkdown } from "./daily-output.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
@@ -109,14 +109,25 @@ async function main(): Promise<void> {
 
   if (options.manualUrl) {
     const collected = await collectManualUrl(options.manualUrl);
+    const rawItems = generateRawSourceItemsFromDocument(collected.sourceDocument);
+    const scoutRawItems = rawItems.length > 0 ? rawItems : [collected.rawSourceItem];
+    const documentCandidates = generateCandidatesFromDocument(collected.sourceDocument).slice(0, options.limit);
     if (options.dryRun) {
-      process.stdout.write(`${JSON.stringify(collected, null, 2)}\n`);
+      process.stdout.write(
+        `${JSON.stringify(
+          {
+            ...collected,
+            rawSourceItems: scoutRawItems,
+            candidates: documentCandidates
+          },
+          null,
+          2
+        )}\n`
+      );
       return;
     }
 
-    const rawItems = [collected.rawSourceItem];
     const feedbackMemory = await readFeedbackMemory(options.feedbackPath);
-    const documentCandidates = generateCandidatesFromDocument(collected.sourceDocument).slice(0, options.limit);
     if (options.useNotion) {
       const results = await writeCandidatesToNotion(documentCandidates, readNotionConfig(options.dryRun));
       const successCount = results.filter((result) => result.ok).length;
@@ -130,8 +141,8 @@ async function main(): Promise<void> {
     const markdown = documentCandidates.length > 0
       ? renderDailyScoutMarkdown(documentCandidates, options.date)
       : options.useLlm
-      ? await scoutToMarkdownWithLlm(rawItems, options.date, options.limit, feedbackMemory)
-      : scoutToMarkdown(rawItems, options.date, options.limit, feedbackMemory);
+      ? await scoutToMarkdownWithLlm(scoutRawItems, options.date, options.limit, feedbackMemory)
+      : scoutToMarkdown(scoutRawItems, options.date, options.limit, feedbackMemory);
     process.stdout.write(markdown);
     return;
   }
