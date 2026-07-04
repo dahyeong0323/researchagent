@@ -137,6 +137,8 @@ export type VerificationResult = {
   confirmedFacts: string[];
   reasonableInferences: string[];
   needsVerification: string[];
+  missingFields: string[];
+  briefAllowed: boolean;
   verificationNotes: string;
   rejectedReason?: string;
   reviewedBy?: "system" | "human";
@@ -269,6 +271,7 @@ export type ScoutCandidate = {
   confirmedFacts?: string[];
   reasonableInferences?: string[];
   needsVerification?: string[];
+  missingFields?: string[];
   briefAllowed: boolean;
 };
 

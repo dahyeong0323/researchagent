@@ -15,7 +15,7 @@ function hasPlaceholderSource(candidate: ScoutCandidate): boolean {
 }
 
 function missingFieldsFor(candidate: ScoutCandidate): string[] {
-  const missing = new Set(candidate.needsVerification ?? []);
+  const missing = new Set(candidate.missingFields ?? candidate.needsVerification ?? []);
 
   if (hasPlaceholderSource(candidate)) {
     missing.add("real public source URL");
@@ -25,12 +25,20 @@ function missingFieldsFor(candidate: ScoutCandidate): string[] {
     missing.add("specific entity name");
   }
 
+  if (candidate.entityType === "unknown") {
+    missing.add("known entity type");
+  }
+
   if (!candidate.observedFeature) {
     missing.add("observed feature or strategic choice");
   }
 
   if (!candidate.evidenceSnippet && (!candidate.evidenceParagraphIds || candidate.evidenceParagraphIds.length === 0)) {
     missing.add("evidence snippet or evidence paragraph reference");
+  }
+
+  if (candidate.evidenceType === "unknown") {
+    missing.add("known evidence type");
   }
 
   return [...missing];

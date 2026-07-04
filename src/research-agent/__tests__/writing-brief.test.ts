@@ -117,4 +117,25 @@ describe("Writing Brief v2", () => {
       await rm(outputDir, { recursive: true, force: true });
     }
   });
+
+  it("exports a normal writing brief only when the candidate is verified and briefAllowed", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "writing-brief-allowed-"));
+
+    try {
+      const outputPath = await writeWritingBriefForCandidate(
+        candidate({
+          sourceUrl: "https://www.headspace.com/articles/friend-check-in",
+          verificationStatus: "verified",
+          briefAllowed: true
+        }),
+        { outputDir, date: "2026-07-03" }
+      );
+      const markdown = await readFile(outputPath, "utf8");
+
+      expect(markdown).toContain("# Writing Brief:");
+      expect(markdown).not.toContain("# Research Task:");
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
 });

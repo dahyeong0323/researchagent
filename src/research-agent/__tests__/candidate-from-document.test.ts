@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { generateCandidatesFromDocument } from "../candidate-from-document.ts";
-import type { SourceDocument } from "../types.ts";
+import type { EntityType, SourceDocument } from "../types.ts";
 
-function sourceDocument(paragraphs: string[]): SourceDocument {
+function sourceDocument(
+  paragraphs: string[],
+  hints: { entityName?: string; entityType?: EntityType } = {}
+): SourceDocument & { entityName?: string; entityType?: EntityType } {
   return {
     documentId: "doc:candidate",
     canonicalUrl: "https://news.acme.test/acme-beauty-refill",
@@ -13,14 +16,18 @@ function sourceDocument(paragraphs: string[]): SourceDocument {
     contentText: paragraphs.join("\n"),
     paragraphs: paragraphs.map((text, index) => ({ id: `p${index + 1}`, index, text })),
     reliabilityTier: 3,
-    fetchedAt: "2026-07-04T00:00:00.000Z"
+    fetchedAt: "2026-07-04T00:00:00.000Z",
+    ...hints
   };
 }
 
 describe("candidate generation from document", () => {
   it("generates a verified candidate only with entity and evidence", () => {
     const [candidate] = generateCandidatesFromDocument(
-      sourceDocument(["Acme Beauty opened a refill station pop-up in Seoul."])
+      sourceDocument(["Acme Beauty opened a refill station pop-up in Seoul."], {
+        entityName: "Acme Beauty",
+        entityType: "brand"
+      })
     );
 
     expect(candidate.entityName).toBe("Acme Beauty");

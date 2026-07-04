@@ -8,6 +8,7 @@ import type {
 } from "./types.ts";
 
 const PLACEHOLDER_HOSTS = new Set(["example.com", "www.example.com"]);
+const LINKEDIN_HOSTS = new Set(["linkedin.com", "www.linkedin.com"]);
 
 const genericEntityNames = new Set([
   "명상 앱",
@@ -18,7 +19,13 @@ const genericEntityNames = new Set([
   "this app",
   "a startup",
   "some brand",
-  "meditation app"
+  "meditation app",
+  "unknown",
+  "sample brand",
+  "example brand",
+  "some company",
+  "this company",
+  "this service"
 ]);
 
 const unsupportedClaimPatterns = [
@@ -33,6 +40,8 @@ const unsupportedClaimPatterns = [
 function nowIso(): string {
   return new Date().toISOString();
 }
+
+type VerificationInput = Partial<ScoutCandidate> & Pick<Partial<RawSourceItem>, "title" | "rawSummary">;
 
 function normalizeText(value: string | undefined): string {
   return value?.trim().replace(/\s+/g, " ") ?? "";
@@ -69,34 +78,30 @@ function hasUsableSourceUrl(sourceUrl: string | undefined): boolean {
   return Boolean(host) && !PLACEHOLDER_HOSTS.has(host) && !host.endsWith(".example.com");
 }
 
+function isLinkedInUrl(sourceUrl: string | undefined): boolean {
+  const host = hostnameFor(sourceUrl);
+  return LINKEDIN_HOSTS.has(host) || host.endsWith(".linkedin.com");
+}
+
 function isGenericEntityName(entityName: string | undefined): boolean {
   const normalized = normalizeText(entityName).toLowerCase();
   return normalized.length === 0 || genericEntityNames.has(normalized);
 }
 
-function inferEvidenceType(item: Partial<RawSourceItem | ScoutCandidate>): EvidenceType {
-  if (item.evidenceType) {
-    return item.evidenceType;
+function isGenericText(value: string | undefined): boolean {
+  const normalized = normalizeText(value).toLowerCase();
+  if (normalized.length === 0) {
+    return false;
   }
 
-  const host = hostnameFor(item.sourceUrl);
-  if (host.includes("apps.apple.com") || host.includes("play.google.com")) {
-    return "app-store";
-  }
-
-  if (host.includes("newsroom")) {
-    return "official";
-  }
-
-  if (host.includes("press") || host.includes("prnewswire")) {
-    return "press-release";
-  }
-
-  if ("sourceCategory" in item && item.sourceCategory === "manual") {
-    return "manual-observation";
-  }
-
-  return host ? "article" : "unknown";
+  return (
+    normalized.includes("sample") ||
+    normalized.includes("placeholder") ||
+    normalized.includes("example.com") ||
+    normalized === "test" ||
+    normalized === "untitled" ||
+    normalized === "example"
+  );
 }
 
 function sourceReliabilityFor(item: Partial<RawSourceItem | ScoutCandidate>, evidenceType: EvidenceType): number {
@@ -155,8 +160,10 @@ function confirmedFactsFor(
 function needsVerificationFor(
   sourceUrl: string | undefined,
   entityName: string | undefined,
+  entityType: EntityType,
   observedFeature: string | undefined,
   evidenceSnippet: string | undefined,
+  evidenceType: EvidenceType,
   evidenceParagraphIds: string[]
 ): string[] {
   const missing: string[] = [];
@@ -165,8 +172,16 @@ function needsVerificationFor(
     missing.push("real public source URL");
   }
 
+  if (isLinkedInUrl(sourceUrl)) {
+    missing.push("non-LinkedIn public source URL");
+  }
+
   if (isGenericEntityName(entityName)) {
     missing.push("specific entity name");
+  }
+
+  if (entityType === "unknown") {
+    missing.push("known entity type");
   }
 
   if (!observedFeature) {
@@ -177,7 +192,25 @@ function needsVerificationFor(
     missing.push("evidence snippet or evidence paragraph reference");
   }
 
+  if (evidenceType === "unknown") {
+    missing.push("known evidence type");
+  }
+
   return missing;
+}
+
+function addGenericTextMissingFields(missing: string[], item: VerificationInput): string[] {
+  const next = new Set(missing);
+
+  if ("title" in item && isGenericText(item.title)) {
+    next.add("non-generic title");
+  }
+
+  if ("rawSummary" in item && isGenericText(item.rawSummary)) {
+    next.add("non-generic summary");
+  }
+
+  return [...next];
 }
 
 function verificationNotesFor(
@@ -205,24 +238,33 @@ export function isBriefAllowed(result: VerificationResult): boolean {
   return (
     result.verificationStatus === "verified" &&
     Boolean(result.entityName) &&
+    result.entityType !== "unknown" &&
     Boolean(result.observedFeature) &&
-    (Boolean(result.evidenceSnippet) || result.evidenceParagraphIds.length > 0)
+    result.evidenceType !== "unknown" &&
+    (Boolean(result.evidenceSnippet) || result.evidenceParagraphIds.length > 0) &&
+    result.missingFields.length === 0
   );
 }
 
-export function verifyCandidate(candidate: Partial<ScoutCandidate>): VerificationResult {
+export function verifyCandidate(candidate: VerificationInput): VerificationResult {
   const entityName = normalizeText(candidate.entityName) || undefined;
+  const entityType = candidate.entityType ?? "unknown";
   const observedFeature = normalizeText(candidate.observedFeature) || undefined;
   const evidenceSnippet = normalizeText(candidate.evidenceSnippet) || undefined;
   const evidenceParagraphIds = evidenceParagraphIdsFor(candidate);
-  const evidenceType = inferEvidenceType(candidate);
+  const evidenceType = candidate.evidenceType ?? "unknown";
   const sourceReliability = sourceReliabilityFor(candidate, evidenceType);
-  const missing = needsVerificationFor(
-    candidate.sourceUrl,
-    entityName,
-    observedFeature,
-    evidenceSnippet,
-    evidenceParagraphIds
+  const missing = addGenericTextMissingFields(
+    needsVerificationFor(
+      candidate.sourceUrl,
+      entityName,
+      entityType,
+      observedFeature,
+      evidenceSnippet,
+      evidenceType,
+      evidenceParagraphIds
+    ),
+    candidate
   );
 
   let verificationStatus: VerificationStatus = candidate.verificationStatus ?? "verified";
@@ -235,11 +277,11 @@ export function verifyCandidate(candidate: Partial<ScoutCandidate>): Verificatio
     verificationStatus = "needs-research";
   }
 
-  return {
+  const result: VerificationResult = {
     verificationId: `verification:${candidate.id ?? candidate.candidateId ?? candidate.sourceUrl ?? "unknown"}`,
     candidateId: candidate.candidateId ?? candidate.id,
     entityName,
-    entityType: candidate.entityType ?? "unknown",
+    entityType,
     observedFeature,
     verificationStatus,
     sourceReliability,
@@ -249,6 +291,8 @@ export function verifyCandidate(candidate: Partial<ScoutCandidate>): Verificatio
     confirmedFacts: verificationStatus === "verified" ? confirmedFactsFor(candidate, entityName, observedFeature) : [],
     reasonableInferences: [],
     needsVerification: verificationStatus === "needs-research" ? missing : [],
+    missingFields: verificationStatus === "verified" ? [] : missing,
+    briefAllowed: false,
     verificationNotes: verificationNotesFor(
       verificationStatus,
       missing,
@@ -259,15 +303,22 @@ export function verifyCandidate(candidate: Partial<ScoutCandidate>): Verificatio
     reviewedBy: "system",
     reviewedAt: nowIso()
   };
+
+  return {
+    ...result,
+    briefAllowed: isBriefAllowed(result)
+  };
 }
 
 export function verifySourceItem(item: RawSourceItem): VerificationResult {
   return verifyCandidate({
     id: item.id ?? item.sourceUrl,
     candidateId: item.id ?? item.sourceUrl,
+    title: item.title,
     sourceUrl: item.sourceUrl,
     sourceName: item.sourceName,
     sourcePublishedAt: item.sourcePublishedAt ?? item.publishedAt,
+    rawSummary: item.rawSummary,
     entityName: item.entityName,
     entityType: item.entityType ?? "unknown",
     observedFeature: item.observedFeature,
@@ -298,6 +349,7 @@ export function applyVerificationToCandidate(
     confirmedFacts: verification.confirmedFacts,
     reasonableInferences: verification.reasonableInferences,
     needsVerification: verification.needsVerification,
-    briefAllowed: isBriefAllowed(verification)
+    missingFields: verification.missingFields,
+    briefAllowed: verification.briefAllowed
   };
 }

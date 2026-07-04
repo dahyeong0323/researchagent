@@ -42,7 +42,8 @@ function buildCandidate(
   document: SourceDocument,
   rawItem: RawSourceItem,
   evidence: EvidenceCandidate | undefined,
-  entityId: string
+  entityId: string,
+  entityType: ScoutCandidate["entityType"]
 ): ScoutCandidate {
   const category = classifyCandidate(rawItem);
   const { score, scoreBreakdown } = scoreCandidate(rawItem, category);
@@ -85,7 +86,7 @@ function buildCandidate(
     sourceReliability: document.reliabilityTier,
     nextAction: evidence ? "make-writing-brief" : "make-research-task",
     entityName,
-    entityType: rawItem.entityType ?? "unknown",
+    entityType,
     observedFeature,
     evidenceSnippet: evidence?.evidenceSnippet,
     evidenceType: evidence?.evidenceType ?? "unknown",
@@ -104,6 +105,6 @@ export function generateCandidatesFromDocument(document: SourceDocument): ScoutC
   return extractEntitiesFromDocument(document).map((entity) => {
     const [evidence] = extractEvidenceForEntity(document, entity);
     const rawItem = rawItemFromDocument(document, entity.displayName, evidence);
-    return buildCandidate(document, rawItem, evidence, entity.entityId);
+    return buildCandidate(document, rawItem, evidence, entity.entityId, entity.entityType);
   });
 }
