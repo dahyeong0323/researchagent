@@ -83,12 +83,31 @@ function nextActionForTelegram(candidate: ScoutCandidate): string {
   return "Make Research Task";
 }
 
+function missingFieldsLine(candidate: ScoutCandidate): string | undefined {
+  if (candidate.verificationStatus === "verified" && candidate.briefAllowed) {
+    return undefined;
+  }
+
+  const missingFields = candidate.missingFields ?? candidate.needsVerification ?? [];
+  return `Missing Fields: ${missingFields.length > 0 ? missingFields.join(", ") : "needs-research"}`;
+}
+
+function evidenceLine(candidate: ScoutCandidate): string | undefined {
+  if (candidate.verificationStatus !== "verified" || !candidate.briefAllowed) {
+    return undefined;
+  }
+
+  return `Evidence: ${candidate.evidenceSnippet ?? "verified evidence present"}`;
+}
+
 export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string {
   const topCandidates = candidates.slice(0, TOP_CANDIDATE_LIMIT);
   const lines = [`오늘 LinkedIn 소재 후보 ${candidates.length}개를 Notion에 저장했습니다.`, "", "Top 5 후보"];
 
   topCandidates.forEach((candidate, index) => {
     const displayName = candidate.entityName ?? candidate.topicName;
+    const evidence = evidenceLine(candidate);
+    const missingFields = missingFieldsLine(candidate);
 
     lines.push(
       "",
@@ -99,6 +118,8 @@ export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string
       `Verification Status: ${candidate.verificationStatus}`,
       `Source: ${candidate.sourceName}`,
       `Evidence Type: ${candidate.evidenceType}`,
+      ...(evidence ? [evidence] : []),
+      ...(missingFields ? [missingFields] : []),
       `Why Gudi Question: ${candidate.coreWhyGudiQuestion}`,
       `Brief Allowed: ${candidate.briefAllowed ? "yes" : "no"}`,
       `Next Action: ${nextActionForTelegram(candidate)}`
@@ -117,7 +138,7 @@ export function buildCandidateInlineKeyboard(candidate: ScoutCandidate): Telegra
         }
       : {
           text: "Make Research Task",
-          callback_data: `task:create:${candidate.candidateId}`
+          callback_data: `research-task:create:${candidate.candidateId}`
         };
 
   return {

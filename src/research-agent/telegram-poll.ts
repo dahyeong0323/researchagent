@@ -12,7 +12,7 @@ const TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const DEFAULT_OFFSET_PATH = "data/research-agent/telegram-offset.json";
 
 type StatusCallbackAction = "selected" | "shortlisted" | "rejected" | "needs-research";
-type CallbackAction = StatusCallbackAction | "task:create" | "brief:create";
+type CallbackAction = StatusCallbackAction | "research-task:create" | "brief:create";
 type NotionStatus = "Selected" | "Shortlisted" | "Rejected" | "Needs Research";
 
 type ParsedCallbackData = {
@@ -57,9 +57,9 @@ export function parseTelegramCallbackData(data?: string): ParsedCallbackData | u
   const [group, actionName, candidateIdValue] = parts;
   const candidateId = candidateIdValue.trim();
 
-  if ((group === "brief" || group === "task") && actionName === "create" && candidateId) {
+  if ((group === "brief" || group === "task" || group === "research-task") && actionName === "create" && candidateId) {
     return {
-      action: `${group}:create` as CallbackAction,
+      action: group === "task" ? "research-task:create" : (`${group}:create` as CallbackAction),
       candidateId
     };
   }
@@ -104,7 +104,7 @@ function buildPostSelectionKeyboard(candidateId: string): TelegramReplyMarkup {
         },
         {
           text: "Make Research Task",
-          callback_data: `task:create:${candidateId}`
+          callback_data: `research-task:create:${candidateId}`
         }
       ]
     ]
@@ -191,7 +191,7 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
     return;
   }
 
-  if (parsed.action === "task:create") {
+  if (parsed.action === "research-task:create") {
     const outputPath = await writeResearchTaskForCandidateId(parsed.candidateId);
     if (!outputPath) {
       const message = `Research task creation failed: candidate not found (${parsed.candidateId})`;

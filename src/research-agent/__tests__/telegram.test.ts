@@ -39,9 +39,11 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     entityType: overrides.entityType ?? "unknown",
     observedFeature: overrides.observedFeature,
     evidenceType: overrides.evidenceType ?? "unknown",
+    evidenceSnippet: overrides.evidenceSnippet,
     verificationStatus: overrides.verificationStatus ?? "needs-research",
     briefAllowed: overrides.briefAllowed ?? false,
-    verificationNotes: overrides.verificationNotes
+    verificationNotes: overrides.verificationNotes,
+    missingFields: overrides.missingFields
   };
 }
 
@@ -55,9 +57,42 @@ describe("Telegram daily notification", () => {
     expect(summary).toContain("Verification Status: needs-research");
     expect(summary).toContain("Source: 테스트 출처");
     expect(summary).toContain("Evidence Type: unknown");
+    expect(summary).toContain("Missing Fields: needs-research");
     expect(summary).toContain("Why Gudi Question: 왜 굳이 이 브랜드는 별도 매장을 만들었을까?");
     expect(summary).toContain("Brief Allowed: no");
     expect(summary).toContain("Next Action: Make Research Task");
+  });
+
+  it("renders verified entity and evidence in the Telegram summary", () => {
+    const summary = renderTelegramDailySummary([
+      candidate({
+        entityName: "Headspace",
+        entityType: "app",
+        observedFeature: "friend check-in",
+        evidenceType: "official",
+        evidenceSnippet: "Headspace announced friend check-ins in its product update.",
+        verificationStatus: "verified",
+        briefAllowed: true
+      })
+    ]);
+
+    expect(summary).toContain("Entity/Topic: Headspace");
+    expect(summary).toContain("Observed Feature: friend check-in");
+    expect(summary).toContain("Evidence: Headspace announced friend check-ins in its product update.");
+    expect(summary).not.toContain("Missing Fields:");
+  });
+
+  it("renders missing fields for needs-research candidates", () => {
+    const summary = renderTelegramDailySummary([
+      candidate({
+        id: "sample-needs-research",
+        missingFields: ["observed feature or strategic choice", "evidence snippet or evidence paragraph reference"]
+      })
+    ]);
+
+    expect(summary).toContain(
+      "Missing Fields: observed feature or strategic choice, evidence snippet or evidence paragraph reference"
+    );
   });
 
   it("shows Make Writing Brief only for verified brief-allowed candidates", () => {
@@ -82,7 +117,7 @@ describe("Telegram daily notification", () => {
     const keyboard = buildCandidateInlineKeyboard(candidate({ id: "sample-needs-research" }));
 
     expect(keyboard.inline_keyboard[1]).toEqual([
-      { text: "Make Research Task", callback_data: "task:create:sample-needs-research" }
+      { text: "Make Research Task", callback_data: "research-task:create:sample-needs-research" }
     ]);
   });
 
@@ -100,7 +135,7 @@ describe("Telegram daily notification", () => {
       callback_data: "brief:create:sample-rejected"
     });
     expect(keyboard.inline_keyboard[1]).toEqual([
-      { text: "Make Research Task", callback_data: "task:create:sample-rejected" }
+      { text: "Make Research Task", callback_data: "research-task:create:sample-rejected" }
     ]);
   });
 
@@ -126,8 +161,12 @@ describe("Telegram daily notification", () => {
       candidateId: "sample-003",
       status: "Needs Research"
     });
+    expect(parseTelegramCallbackData("research-task:create:sample-003")).toEqual({
+      action: "research-task:create",
+      candidateId: "sample-003"
+    });
     expect(parseTelegramCallbackData("task:create:sample-003")).toEqual({
-      action: "task:create",
+      action: "research-task:create",
       candidateId: "sample-003"
     });
     expect(parseTelegramCallbackData("brief:create:sample-003")).toEqual({
