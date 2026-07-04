@@ -91,6 +91,17 @@ describe("RSS enrichment", () => {
     });
   });
 
+  it("keeps business-signal entries and filters generic macro items", async () => {
+    const items = await collectRssFeeds([feed], {
+      fetchImpl: fetchByUrl({ [feed.feedUrl]: rssXml }),
+      now: new Date("2026-07-04T00:00:00.000Z")
+    });
+
+    expect(items.map((item) => item.title)).toEqual([
+      "Acme Beauty launches refill station pop-up"
+    ]);
+  });
+
   it("fetches linked article HTML and returns SourceDocuments", async () => {
     const result = await collectRssFeedsWithDocuments([feed], {
       fetchImpl: fetchByUrl({
