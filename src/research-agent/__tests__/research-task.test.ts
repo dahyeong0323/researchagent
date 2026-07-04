@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createResearchTaskFromCandidate, renderResearchTaskMarkdown } from "../research-task.ts";
-import type { ScoutCandidate } from "../types.ts";
+import { createResearchTask, createResearchTaskFromCandidate, renderResearchTaskMarkdown } from "../research-task.ts";
+import type { ScoutCandidate, VerificationResult } from "../types.ts";
 
 function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
   return {
@@ -46,7 +46,31 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     verificationNotes:
       overrides.verificationNotes ?? "Candidate needs a real source, entity, observed feature, and evidence.",
     needsVerification: overrides.needsVerification,
+    missingFields: overrides.missingFields,
     briefAllowed: overrides.briefAllowed ?? false
+  };
+}
+
+function verificationResult(overrides: Partial<VerificationResult> = {}): VerificationResult {
+  return {
+    verificationId: overrides.verificationId ?? "verification:candidate-research-1",
+    candidateId: overrides.candidateId ?? "candidate-research-1",
+    entityName: overrides.entityName,
+    entityType: overrides.entityType ?? "unknown",
+    observedFeature: overrides.observedFeature,
+    verificationStatus: overrides.verificationStatus ?? "needs-research",
+    sourceReliability: overrides.sourceReliability ?? 1,
+    evidenceSnippet: overrides.evidenceSnippet,
+    evidenceType: overrides.evidenceType ?? "unknown",
+    evidenceParagraphIds: overrides.evidenceParagraphIds ?? [],
+    confirmedFacts: overrides.confirmedFacts ?? [],
+    reasonableInferences: overrides.reasonableInferences ?? [],
+    needsVerification: overrides.needsVerification ?? ["known entity type", "known evidence type"],
+    missingFields: overrides.missingFields ?? ["known entity type", "known evidence type"],
+    briefAllowed: overrides.briefAllowed ?? false,
+    verificationNotes: overrides.verificationNotes ?? "Verification result says this needs more research.",
+    reviewedBy: "system",
+    reviewedAt: "2026-07-03T00:00:00.000Z"
   };
 }
 
@@ -56,6 +80,8 @@ describe("structured research tasks", () => {
 
     expect(task.taskId).toBe("research-task:candidate-research-1");
     expect(task.candidateId).toBe("candidate-research-1");
+    expect(task.topicName).toBe("Sample brand opens offline verification pop-up");
+    expect(task.reason).toBe("Candidate needs a real source, entity, observed feature, and evidence.");
     expect(task.status).toBe("open");
     expect(task.priority).toBe("medium");
   });
@@ -67,6 +93,44 @@ describe("structured research tasks", () => {
     expect(task.missingFields).toContain("specific entity name");
     expect(task.missingFields).toContain("observed feature or strategic choice");
     expect(task.missingFields).toContain("evidence snippet or evidence paragraph reference");
+    expect(task.missingFields).toContain("known entity type");
+    expect(task.missingFields).toContain("known evidence type");
+  });
+
+  it("can build a ResearchTask from an explicit VerificationResult", () => {
+    const task = createResearchTask(
+      candidate({
+        sourceUrl: "https://news.example.org/article",
+        entityName: "Acme Beauty",
+        entityType: "brand"
+      }),
+      verificationResult({
+        entityName: "Acme Beauty",
+        entityType: "brand",
+        missingFields: ["observed feature or strategic choice"],
+        verificationNotes: "Observed feature still needs a directly cited source sentence."
+      })
+    );
+
+    expect(task.reason).toBe("Observed feature still needs a directly cited source sentence.");
+    expect(task.currentSourceUrl).toBe("https://news.example.org/article");
+    expect(task.currentEntityName).toBe("Acme Beauty");
+    expect(task.missingFields).toEqual(["observed feature or strategic choice"]);
+    expect(task.questionsToAnswer.some((question) => question.includes("concrete feature"))).toBe(true);
+  });
+
+  it("includes concrete research questions and required evidence", () => {
+    const task = createResearchTaskFromCandidate(candidate());
+
+    expect(task.questionsToAnswer).toContain(
+      'What exact entity is behind "Sample brand opens offline verification pop-up"?'
+    );
+    expect(task.requiredEvidence).toContain(
+      "A public, non-placeholder URL that can be opened without login or paywall bypass."
+    );
+    expect(task.requiredEvidence).toContain(
+      "A source sentence or paragraph that directly supports the observed feature or strategic choice."
+    );
   });
 
   it("renders markdown without a Writing Brief heading", () => {
@@ -78,9 +142,13 @@ describe("structured research tasks", () => {
     expect(markdown).toContain("## Candidate");
     expect(markdown).toContain("## Why this needs research");
     expect(markdown).toContain("## Missing fields");
-    expect(markdown).toContain("## Verification questions");
+    expect(markdown).toContain("## Current verified facts");
+    expect(markdown).toContain("## Research questions");
+    expect(markdown).toContain("## Required evidence");
     expect(markdown).toContain("## Suggested search queries");
     expect(markdown).toContain("## Completion criteria");
+    expect(markdown).toContain("What exact entity is behind");
+    expect(markdown).toContain("A public, non-placeholder URL");
     expect(markdown).not.toContain("# Writing Brief");
   });
 });

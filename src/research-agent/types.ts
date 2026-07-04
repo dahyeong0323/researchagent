@@ -148,12 +148,19 @@ export type VerificationResult = {
 export type ResearchTask = {
   taskId: string;
   candidateId: string;
+  topicName: string;
   taskTitle: string;
   taskReason: string;
+  reason: string;
   missingFields: string[];
+  currentSourceUrl?: string;
+  currentEntityName?: string;
+  currentObservedFeature?: string;
   requiredSources: string[];
   verificationQuestions: string[];
+  questionsToAnswer: string[];
   suggestedSearchQueries: string[];
+  requiredEvidence: string[];
   priority: "low" | "medium" | "high";
   completionCriteria: string[];
   status: "open" | "in-progress" | "resolved" | "cancelled";

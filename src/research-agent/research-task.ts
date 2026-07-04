@@ -1,4 +1,4 @@
-import type { ResearchTask, ScoutCandidate } from "./types.ts";
+import type { ResearchTask, ScoutCandidate, VerificationResult } from "./types.ts";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -14,7 +14,11 @@ function hasPlaceholderSource(candidate: ScoutCandidate): boolean {
   );
 }
 
-function missingFieldsFor(candidate: ScoutCandidate): string[] {
+function missingFieldsFor(candidate: ScoutCandidate, verification?: VerificationResult): string[] {
+  if (verification) {
+    return [...new Set(verification.missingFields.length > 0 ? verification.missingFields : verification.needsVerification)];
+  }
+
   const missing = new Set(candidate.missingFields ?? candidate.needsVerification ?? []);
 
   if (hasPlaceholderSource(candidate)) {
@@ -72,6 +76,28 @@ function verificationQuestionsFor(candidate: ScoutCandidate, missingFields: stri
   return questions;
 }
 
+function requiredEvidenceFor(candidate: ScoutCandidate, missingFields: string[]): string[] {
+  const required = [
+    "A public, non-placeholder URL that can be opened without login or paywall bypass.",
+    "A source sentence or paragraph that directly names the entity.",
+    "A source sentence or paragraph that directly supports the observed feature or strategic choice."
+  ];
+
+  if (missingFields.includes("known entity type")) {
+    required.push("Evidence that identifies whether the entity is a company, brand, app, service, store, product, or person.");
+  }
+
+  if (missingFields.includes("known evidence type")) {
+    required.push("Evidence type label such as official, article, press-release, app-store, release-note, or manual-observation.");
+  }
+
+  if (candidate.sourceUrl && !hasPlaceholderSource(candidate)) {
+    required.unshift(`Current source to verify or replace: ${candidate.sourceUrl}`);
+  }
+
+  return [...new Set(required)];
+}
+
 function suggestedSearchQueriesFor(candidate: ScoutCandidate): string[] {
   const topic = candidate.topicName.replace(/\s+/g, " ").trim();
   const entity = candidate.entityName?.trim();
@@ -107,25 +133,48 @@ function completionCriteriaFor(): string[] {
   ];
 }
 
-export function createResearchTaskFromCandidate(candidate: ScoutCandidate): ResearchTask {
-  const missingFields = missingFieldsFor(candidate);
+function reasonFor(candidate: ScoutCandidate, verification?: VerificationResult): string {
+  return (
+    verification?.verificationNotes ??
+    candidate.verificationNotes ??
+    "Candidate is not eligible for a Writing Brief until source, entity, feature, and evidence are verified."
+  );
+}
+
+export function createResearchTask(
+  candidate: ScoutCandidate,
+  verification?: VerificationResult
+): ResearchTask {
+  const missingFields = missingFieldsFor(candidate, verification);
+  const reason = reasonFor(candidate, verification);
+  const questionsToAnswer = verificationQuestionsFor(candidate, missingFields);
+  const requiredEvidence = requiredEvidenceFor(candidate, missingFields);
 
   return {
     taskId: `research-task:${candidate.candidateId}`,
     candidateId: candidate.candidateId,
+    topicName: candidate.topicName,
     taskTitle: `Research needed: ${candidate.topicName}`,
-    taskReason:
-      candidate.verificationNotes ??
-      "Candidate is not eligible for a Writing Brief until source, entity, feature, and evidence are verified.",
+    taskReason: reason,
+    reason,
     missingFields,
+    currentSourceUrl: candidate.sourceUrl,
+    currentEntityName: candidate.entityName,
+    currentObservedFeature: candidate.observedFeature,
     requiredSources: requiredSourcesFor(candidate),
-    verificationQuestions: verificationQuestionsFor(candidate, missingFields),
+    verificationQuestions: questionsToAnswer,
+    questionsToAnswer,
     suggestedSearchQueries: suggestedSearchQueriesFor(candidate),
+    requiredEvidence,
     priority: priorityFor(candidate, missingFields),
     completionCriteria: completionCriteriaFor(),
     status: "open",
     createdAt: nowIso()
   };
+}
+
+export function createResearchTaskFromCandidate(candidate: ScoutCandidate): ResearchTask {
+  return createResearchTask(candidate);
 }
 
 function renderList(items: string[]): string {
@@ -151,7 +200,16 @@ export function renderResearchTaskMarkdown(task: ResearchTask, candidate: ScoutC
     "",
     "## Why this needs research",
     "",
-    task.taskReason,
+    task.reason,
+    "",
+    "## Current verified facts",
+    "",
+    renderList([
+      task.currentSourceUrl ? `Current source URL: ${task.currentSourceUrl}` : undefined,
+      task.currentEntityName ? `Current entity name: ${task.currentEntityName}` : undefined,
+      task.currentObservedFeature ? `Current observed feature: ${task.currentObservedFeature}` : undefined,
+      candidate.evidenceSnippet ? `Current evidence snippet: ${candidate.evidenceSnippet}` : undefined
+    ].filter((item): item is string => Boolean(item))),
     "",
     "## Missing fields",
     "",
@@ -161,9 +219,13 @@ export function renderResearchTaskMarkdown(task: ResearchTask, candidate: ScoutC
     "",
     renderList(task.requiredSources),
     "",
-    "## Verification questions",
+    "## Research questions",
     "",
-    renderList(task.verificationQuestions),
+    renderList(task.questionsToAnswer),
+    "",
+    "## Required evidence",
+    "",
+    renderList(task.requiredEvidence),
     "",
     "## Suggested search queries",
     "",
