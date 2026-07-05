@@ -182,6 +182,10 @@ export function buildDailySummaryInlineKeyboard(candidates: ScoutCandidate[]): T
 }
 
 export async function sendTelegramDailySummary(candidates: ScoutCandidate[]): Promise<boolean> {
+  if (candidates.length === 0) {
+    return false;
+  }
+
   const config = readTelegramConfig();
 
   if (!config.enabled) {
@@ -190,4 +194,21 @@ export async function sendTelegramDailySummary(candidates: ScoutCandidate[]): Pr
 
   await registerTelegramCallbackCandidateIds(candidates.map((candidate) => candidate.candidateId));
   return sendTelegramMessage(renderTelegramDailySummary(candidates), buildDailySummaryInlineKeyboard(candidates), config);
+}
+
+export async function sendTelegramDailySummaryIfEnabled(
+  candidates: ScoutCandidate[],
+  sender: (candidates: ScoutCandidate[]) => Promise<boolean> = sendTelegramDailySummary
+): Promise<boolean> {
+  if (candidates.length === 0 || !readTelegramConfig().enabled) {
+    return false;
+  }
+
+  try {
+    return await sender(candidates);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warn(`daily summary failed: ${message}`);
+    return false;
+  }
 }

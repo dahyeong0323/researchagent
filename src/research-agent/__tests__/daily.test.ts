@@ -60,6 +60,14 @@ function sourceDocument(overrides: Partial<SourceDocument> = {}): SourceDocument
   };
 }
 
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 async function tempRunPaths() {
   const root = await mkdtemp(join(tmpdir(), "research-agent-daily-"));
   const feedsPath = join(root, "feeds.json");
@@ -240,8 +248,10 @@ describe("daily batch runner", () => {
 
   it("sends only top candidates to Telegram", async () => {
     const paths = await tempRunPaths();
+    const previousTelegramEnabled = process.env.TELEGRAM_ENABLED;
     let sentCount = 0;
     try {
+      process.env.TELEGRAM_ENABLED = "1";
       const result = await runDaily(
         {
           dryRun: false,
@@ -291,6 +301,123 @@ describe("daily batch runner", () => {
       expect(result.artifact.telegramSent).toBe(1);
       expect(sentCount).toBe(2);
     } finally {
+      restoreEnv("TELEGRAM_ENABLED", previousTelegramEnabled);
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("sends Telegram only for candidates successfully written to Notion", async () => {
+    const paths = await tempRunPaths();
+    const previousTelegramEnabled = process.env.TELEGRAM_ENABLED;
+    let failedCandidateId = "";
+    let sentCandidateIds: string[] = [];
+    try {
+      process.env.TELEGRAM_ENABLED = "1";
+      const result = await runDaily(
+        {
+          dryRun: false,
+          date: "2026-07-04",
+          limit: 3,
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [
+            verifiedRawItem({ id: "one", title: "Acme Beauty launches refill station pop-up one", sourceUrl: "https://news.acme.co.kr/one" }),
+            verifiedRawItem({
+              id: "two",
+              title: "Beta Market opens Seoul store",
+              sourceUrl: "https://news.acme.co.kr/two",
+              rawSummary: "Beta Market opened a small-format Seoul store for weekly grocery missions.",
+              entityName: "Beta Market",
+              observedFeature: "small-format Seoul grocery store",
+              evidenceSnippet: "Beta Market opened a small-format Seoul store for weekly grocery missions."
+            }),
+            verifiedRawItem({
+              id: "three",
+              title: "Coda App launches new feature",
+              sourceUrl: "https://news.acme.co.kr/three",
+              rawSummary: "Coda App launched an approval workflow for team onboarding.",
+              entityName: "Coda App",
+              observedFeature: "approval workflow launch",
+              evidenceSnippet: "Coda App launched an approval workflow for team onboarding."
+            })
+          ],
+          writeCandidatesToNotion: async (candidates) =>
+            candidates.map((candidate, index) => {
+              if (index === 1) {
+                failedCandidateId = candidate.id;
+                return {
+                  ok: false,
+                  candidateId: candidate.id,
+                  topicName: candidate.topicName,
+                  dryRun: false,
+                  error: "Notion request failed"
+                };
+              }
+
+              return {
+                ok: true,
+                candidateId: candidate.id,
+                topicName: candidate.topicName,
+                dryRun: false
+              };
+            }),
+          sendTelegramDailySummary: async (candidates) => {
+            sentCandidateIds = candidates.map((candidate) => candidate.id);
+            return true;
+          }
+        }
+      );
+
+      expect(result.artifact.notionWritten).toBe(2);
+      expect(result.artifact.telegramSent).toBe(1);
+      expect(sentCandidateIds).toHaveLength(2);
+      expect(sentCandidateIds).not.toContain(failedCandidateId);
+    } finally {
+      restoreEnv("TELEGRAM_ENABLED", previousTelegramEnabled);
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not send Telegram when TELEGRAM_ENABLED is not 1", async () => {
+    const paths = await tempRunPaths();
+    const previousTelegramEnabled = process.env.TELEGRAM_ENABLED;
+    let telegramCalled = false;
+    try {
+      delete process.env.TELEGRAM_ENABLED;
+      const result = await runDaily(
+        {
+          dryRun: false,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [verifiedRawItem()],
+          writeCandidatesToNotion: async (candidates) =>
+            candidates.map((candidate) => ({
+              ok: true,
+              candidateId: candidate.id,
+              topicName: candidate.topicName,
+              dryRun: false
+            })),
+          sendTelegramDailySummary: async () => {
+            telegramCalled = true;
+            return true;
+          }
+        }
+      );
+
+      expect(result.artifact.notionWritten).toBe(1);
+      expect(result.artifact.telegramSent).toBe(0);
+      expect(telegramCalled).toBe(false);
+    } finally {
+      restoreEnv("TELEGRAM_ENABLED", previousTelegramEnabled);
       await rm(paths.root, { recursive: true, force: true });
     }
   });

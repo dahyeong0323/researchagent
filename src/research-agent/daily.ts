@@ -6,12 +6,12 @@ import { generateCandidatesFromDocument } from "./candidate-from-document.ts";
 import { dedupeCandidates } from "./dedupe.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
-import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
+import { candidatesWithSuccessfulNotionWrites, readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { processRawCandidates } from "./scout.ts";
 import { candidatesFromDocumentOrFallback } from "./source-candidates.ts";
 import { collectManualUrl, collectRssFeeds, collectRssFeedsWithDocuments } from "./sources/index.ts";
 import { assertFeedConfigs, type FeedConfig } from "./sources/feed-config.ts";
-import { sendTelegramDailySummary } from "./telegram.ts";
+import { sendTelegramDailySummary, sendTelegramDailySummaryIfEnabled } from "./telegram.ts";
 import type { RawSourceItem, ScoutCandidate } from "./types.ts";
 
 loadLocalEnv();
@@ -489,10 +489,7 @@ export async function runDaily(
       const notionWriter = dependencies.writeCandidatesToNotion ?? writeCandidatesToNotion;
       const results = await notionWriter(candidates, readNotionConfig(false));
       notionWritten = results.filter((result) => result.ok).length;
-      const writtenCandidateIds = new Set(results.filter((result) => result.ok).map((result) => result.candidateId));
-      writtenCandidates.push(
-        ...candidates.filter((candidate) => writtenCandidateIds.has(candidate.id) || writtenCandidateIds.has(candidate.candidateId))
-      );
+      writtenCandidates.push(...candidatesWithSuccessfulNotionWrites(candidates, results));
     } catch (error) {
       errors.push(`notion: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -511,13 +508,9 @@ export async function runDaily(
   }
 
   let telegramSent = 0;
-  if (!options.dryRun && candidates.length > 0 && notionWritten > 0 && candidateSnapshotWritten) {
-    try {
-      const telegramSender = dependencies.sendTelegramDailySummary ?? sendTelegramDailySummary;
-      telegramSent = (await telegramSender(candidates.slice(0, Math.min(limit, 5)))) ? 1 : 0;
-    } catch (error) {
-      errors.push(`telegram: ${error instanceof Error ? error.message : String(error)}`);
-    }
+  if (!options.dryRun && writtenCandidates.length > 0 && candidateSnapshotWritten) {
+    const telegramSender = dependencies.sendTelegramDailySummary ?? sendTelegramDailySummary;
+    telegramSent = (await sendTelegramDailySummaryIfEnabled(writtenCandidates, telegramSender)) ? 1 : 0;
   }
 
   if (!options.dryRun) {

@@ -1,18 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { DEFAULT_INPUT_PATH, DEFAULT_TOP_LIMIT } from "./config.ts";
 import { generateCandidatesFromDocument, generateRawSourceItemsFromDocument } from "./candidate-from-document.ts";
 import { renderDailyScoutMarkdown } from "./daily-output.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
-import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
+import { candidatesWithSuccessfulNotionWrites, readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { scoutToMarkdown, scoutToMarkdownWithLlm } from "./scout.ts";
 import { processRawCandidates, processRawCandidatesWithLlm } from "./scout.ts";
 import { candidatesFromDocumentOrFallback } from "./source-candidates.ts";
 import { assertFeedConfigs, collectManualUrl, collectRssFeedsWithDocuments } from "./sources/index.ts";
-import { sendTelegramDailySummary } from "./telegram.ts";
+import { sendTelegramDailySummary, sendTelegramDailySummaryIfEnabled } from "./telegram.ts";
 import type { FeedConfig } from "./sources/index.ts";
-import type { RawSourceItem } from "./types.ts";
+import type { NotionWriteResult } from "./notion.ts";
+import type { RawSourceItem, ScoutCandidate } from "./types.ts";
 
 loadLocalEnv();
 
@@ -117,6 +119,30 @@ function assertRawSourceItems(value: unknown): asserts value is RawSourceItem[] 
   });
 }
 
+type NotionTelegramDependencies = {
+  writeCandidatesToNotion?: typeof writeCandidatesToNotion;
+  sendTelegramDailySummary?: typeof sendTelegramDailySummary;
+};
+
+export async function writeCandidatesToNotionAndMaybeSendTelegram(
+  candidates: ScoutCandidate[],
+  dryRun: boolean,
+  dependencies: NotionTelegramDependencies = {}
+): Promise<NotionWriteResult[]> {
+  const notionWriter = dependencies.writeCandidatesToNotion ?? writeCandidatesToNotion;
+  const results = await notionWriter(candidates, readNotionConfig(dryRun));
+  const successCount = results.filter((result) => result.ok).length;
+  const failureCount = results.length - successCount;
+  process.stderr.write(`Notion write summary: ${successCount} ok, ${failureCount} failed, dryRun=${dryRun}\n`);
+
+  if (!dryRun) {
+    const telegramSender = dependencies.sendTelegramDailySummary ?? sendTelegramDailySummary;
+    await sendTelegramDailySummaryIfEnabled(candidatesWithSuccessfulNotionWrites(candidates, results), telegramSender);
+  }
+
+  return results;
+}
+
 async function main(): Promise<void> {
   const options = readCliOptions(process.argv.slice(2));
 
@@ -134,12 +160,7 @@ async function main(): Promise<void> {
     const feedbackMemory = await readFeedbackMemory(options.feedbackPath);
     if (options.useNotion) {
       const candidates = rssResult.candidates.slice(0, options.limit);
-      const results = await writeCandidatesToNotion(candidates, readNotionConfig(options.dryRun));
-      const successCount = results.filter((result) => result.ok).length;
-      const failureCount = results.length - successCount;
-      process.stderr.write(
-        `Notion write summary: ${successCount} ok, ${failureCount} failed, dryRun=${options.dryRun}\n`
-      );
+      await writeCandidatesToNotionAndMaybeSendTelegram(candidates, options.dryRun);
       return;
     }
 
@@ -177,12 +198,7 @@ async function main(): Promise<void> {
 
     const feedbackMemory = await readFeedbackMemory(options.feedbackPath);
     if (options.useNotion) {
-      const results = await writeCandidatesToNotion(documentCandidates, readNotionConfig(options.dryRun));
-      const successCount = results.filter((result) => result.ok).length;
-      const failureCount = results.length - successCount;
-      process.stderr.write(
-        `Notion write summary: ${successCount} ok, ${failureCount} failed, dryRun=${options.dryRun}\n`
-      );
+      await writeCandidatesToNotionAndMaybeSendTelegram(documentCandidates, options.dryRun);
       return;
     }
 
@@ -204,18 +220,7 @@ async function main(): Promise<void> {
     const candidates = options.useLlm
       ? await processRawCandidatesWithLlm(parsed, options.limit, feedbackMemory)
       : processRawCandidates(parsed, options.limit, feedbackMemory);
-    const results = await writeCandidatesToNotion(candidates, readNotionConfig(options.dryRun));
-    const successCount = results.filter((result) => result.ok).length;
-    const failureCount = results.length - successCount;
-    process.stderr.write(
-      `Notion write summary: ${successCount} ok, ${failureCount} failed, dryRun=${options.dryRun}\n`
-    );
-    if (!options.dryRun) {
-      const successfulCandidateIds = new Set(
-        results.filter((result) => result.ok).map((result) => result.candidateId)
-      );
-      await sendTelegramDailySummary(candidates.filter((candidate) => successfulCandidateIds.has(candidate.id)));
-    }
+    await writeCandidatesToNotionAndMaybeSendTelegram(candidates, options.dryRun);
     return;
   }
 
@@ -226,8 +231,10 @@ async function main(): Promise<void> {
   process.stdout.write(markdown);
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`Research scout failed: ${message}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`Research scout failed: ${message}\n`);
+    process.exitCode = 1;
+  });
+}

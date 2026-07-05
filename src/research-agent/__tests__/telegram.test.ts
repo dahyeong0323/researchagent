@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseTelegramCallbackData } from "../telegram-poll.ts";
-import { buildCandidateInlineKeyboard, renderTelegramDailySummary } from "../telegram.ts";
+import { buildCandidateInlineKeyboard, renderTelegramDailySummary, sendTelegramDailySummary } from "../telegram.ts";
 import { registerTelegramCallbackCandidateIds, TELEGRAM_CALLBACK_DATA_MAX_BYTES } from "../telegram-callback.ts";
 import type { ScoutCandidate } from "../types.ts";
 
@@ -49,6 +49,14 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     verificationNotes: overrides.verificationNotes,
     missingFields: overrides.missingFields
   };
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
 }
 
 describe("Telegram daily notification", () => {
@@ -97,6 +105,32 @@ describe("Telegram daily notification", () => {
     expect(summary).toContain(
       "Missing Fields: observed feature or strategic choice, evidence snippet or evidence paragraph reference"
     );
+  });
+
+  it("does not send an empty daily summary", async () => {
+    const previousTelegramEnabled = process.env.TELEGRAM_ENABLED;
+    const previousBotToken = process.env.TELEGRAM_BOT_TOKEN;
+    const previousChatId = process.env.TELEGRAM_CHAT_ID;
+    const originalFetch = globalThis.fetch;
+    let fetchCalled = false;
+
+    try {
+      process.env.TELEGRAM_ENABLED = "1";
+      process.env.TELEGRAM_BOT_TOKEN = "token";
+      process.env.TELEGRAM_CHAT_ID = "chat";
+      globalThis.fetch = (async () => {
+        fetchCalled = true;
+        return new Response(null, { status: 200 });
+      }) as typeof fetch;
+
+      await expect(sendTelegramDailySummary([])).resolves.toBe(false);
+      expect(fetchCalled).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv("TELEGRAM_ENABLED", previousTelegramEnabled);
+      restoreEnv("TELEGRAM_BOT_TOKEN", previousBotToken);
+      restoreEnv("TELEGRAM_CHAT_ID", previousChatId);
+    }
   });
 
   it("shows Make Writing Brief only for verified brief-allowed candidates", () => {

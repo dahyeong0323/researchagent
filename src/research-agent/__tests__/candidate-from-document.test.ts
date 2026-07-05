@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { generateCandidatesFromDocument, generateRawSourceItemsFromDocument } from "../candidate-from-document.ts";
+import { CATEGORY_BY_SOURCE } from "../config.ts";
 import type { EntityType, SourceDocument } from "../types.ts";
 
 function sourceDocument(
   paragraphs: string[],
-  hints: { entityName?: string; entityType?: EntityType } = {}
+  hints: Partial<SourceDocument> & { entityName?: string; entityType?: EntityType } = {}
 ): SourceDocument & { entityName?: string; entityType?: EntityType } {
   return {
     documentId: "doc:candidate",
@@ -66,6 +67,81 @@ describe("candidate generation from document", () => {
       evidenceType: "article",
       verificationStatus: "verified"
     });
+  });
+
+  it("preserves startup source metadata when generating RawSourceItems from documents", () => {
+    const [item] = generateRawSourceItemsFromDocument(
+      sourceDocument(["Acme AI launched a diagnostic workflow for small clinics."], {
+        documentType: "rss",
+        collectorType: "rss",
+        sourceCategory: "startup_news",
+        country: "US",
+        language: "en",
+        reliabilityTier: 5,
+        collectedAt: "2026-07-03T00:00:00.000Z",
+        rawHtml: "<html><body>Acme AI launched a diagnostic workflow for small clinics.</body></html>",
+        entityName: "Acme AI",
+        entityType: "company"
+      })
+    );
+
+    expect(item).toMatchObject({
+      collectorType: "rss",
+      sourceCategory: "startup_news",
+      country: "US",
+      language: "en",
+      sourceReliability: 5,
+      collectedAt: "2026-07-03T00:00:00.000Z"
+    });
+    expect(item.rawHtml).toContain("diagnostic workflow");
+  });
+
+  it("does not convert investment documents to manual candidates", () => {
+    const [candidate] = generateCandidatesFromDocument(
+      sourceDocument(["Beta Capital invested in Ledgerly to expand invoice automation."], {
+        documentType: "rss",
+        collectorType: "rss",
+        sourceCategory: "investment_news",
+        reliabilityTier: 4,
+        entityName: "Beta Capital",
+        entityType: "company"
+      })
+    );
+
+    expect(candidate.category).toBe(CATEGORY_BY_SOURCE.investment_news);
+    expect(candidate.scoreBreakdown.sourceReliability).toBe(4);
+  });
+
+  it("defaults manual URL documents without sourceCategory to manual", () => {
+    const [item] = generateRawSourceItemsFromDocument(
+      sourceDocument(["Acme Beauty opened a refill station pop-up in Seoul."], {
+        entityName: "Acme Beauty",
+        entityType: "brand"
+      })
+    );
+
+    expect(item.collectorType).toBe("manual-url");
+    expect(item.sourceCategory).toBe("manual");
+    expect(item.country).toBe("UNKNOWN");
+    expect(item.language).toBe("unknown");
+    expect(item.sourceReliability).toBe(3);
+  });
+
+  it("scores document-derived candidates with preserved source category", () => {
+    const [candidate] = generateCandidatesFromDocument(
+      sourceDocument(["Acme AI launched a diagnostic workflow for small clinics."], {
+        documentType: "official-blog",
+        collectorType: "official-blog",
+        sourceCategory: "startup_news",
+        reliabilityTier: 5,
+        entityName: "Acme AI",
+        entityType: "company"
+      })
+    );
+
+    expect(candidate.category).toBe(CATEGORY_BY_SOURCE.startup_news);
+    expect(candidate.scoreBreakdown.sourceReliability).toBe(4);
+    expect(candidate.scoreBreakdown.sourceReliabilityScore).toBe(15);
   });
 
   it("generates needs-research RawSourceItems when entity evidence is missing", () => {

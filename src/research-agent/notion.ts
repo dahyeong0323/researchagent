@@ -473,6 +473,23 @@ export async function writeCandidatesToNotion(
   return results;
 }
 
+export function candidatesWithSuccessfulNotionWrites(
+  candidates: ScoutCandidate[],
+  results: NotionWriteResult[]
+): ScoutCandidate[] {
+  const successfulCandidateIds = new Set(
+    results.filter((result) => result.ok).map((result) => result.candidateId)
+  );
+
+  if (successfulCandidateIds.size === 0) {
+    return [];
+  }
+
+  return candidates.filter(
+    (candidate) => successfulCandidateIds.has(candidate.id) || successfulCandidateIds.has(candidate.candidateId)
+  );
+}
+
 function notionQueryUrl(config: NotionConfig): string {
   if ("data_source" in config.parent) {
     return `${NOTION_DATA_SOURCE_QUERY_URL}/${config.parent.data_source.id}/query`;

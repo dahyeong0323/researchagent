@@ -7,9 +7,6 @@ type SourceDocumentWithEntityHints = SourceDocument & {
 };
 
 const genericEntityNames = new Set([
-  "명상 앱",
-  "어떤 서비스",
-  "한 브랜드",
   "this app",
   "a startup",
   "a company",
@@ -24,7 +21,9 @@ const genericEntityNames = new Set([
   "명상 앱",
   "어떤 서비스",
   "어떤 브랜드",
+  "한 브랜드",
   "한 스타트업",
+  "스타트업",
   "서비스명",
   "브랜드명"
 ]);
@@ -48,6 +47,15 @@ const titleTriggers = [
   "도입",
   "확대",
   "오픈",
+  "제휴",
+  "운영",
+  "투자 유치",
+  "투자",
+  "유치",
+  "개편",
+  "공개",
+  "업데이트",
+  "론칭",
   "개편"
 ];
 
@@ -59,6 +67,11 @@ const bodyStopPhrases = new Set([
   "Korea",
   "LinkedIn"
 ]);
+
+const koreanActionTriggerPattern = /출시|도입|확대|오픈|제휴|운영|투자\s*유치|투자|유치|개편|공개|업데이트|론칭/u;
+const koreanEntitySuffixPattern =
+  /([가-힣A-Za-z0-9]+(?:랩스|페이|뱅크|스토어|프렌즈|커머스|마켓|테크|뷰티|AI|앱))(?:은|는|이|가|을|를|와|과|에서|으로|로)?/gu;
+const englishProperNamePattern = /\b[A-Z][A-Za-z0-9&'.-]*(?:[ \t]+[A-Z][A-Za-z0-9&'.-]*){0,3}\b/gu;
 
 function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
@@ -89,6 +102,18 @@ function inferEntityType(displayName: string, document: SourceDocument): EntityT
   }
 
   if (["olive better", "daiso", "다이소"].includes(name)) {
+    return "brand";
+  }
+
+  if (/(랩스|테크|뱅크|페이)$/u.test(displayName) || /(스타트업|투자|유치|프리a|시드)/iu.test(context)) {
+    return "company";
+  }
+
+  if (/(프렌즈|앱)$/u.test(displayName) || /(루틴\s*관리\s*앱|모바일\s*앱|앱\s|기능)/u.test(context)) {
+    return "app";
+  }
+
+  if (/(스토어|커머스|마켓|뷰티)$/u.test(displayName) || /(매장|브랜드|리테일|오픈|올리브영|웰니스)/u.test(context)) {
     return "brand";
   }
 
@@ -246,6 +271,49 @@ function collectJsonLdEntities(value: unknown): Entity[] {
   return entity ? [entity, ...nested] : nested;
 }
 
+function uniqueNames(names: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const name of names.map(normalizeName).filter((name) => name.length >= 2 && !isGenericEntityName(name))) {
+    const key = normalizedKey(name);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push(name);
+  }
+
+  return result;
+}
+
+function koreanEntityNames(value: string): string[] {
+  return uniqueNames([...value.matchAll(koreanEntitySuffixPattern)].map((match) => match[1]));
+}
+
+function englishProperNames(value: string): string[] {
+  return uniqueNames(
+    [...value.matchAll(englishProperNamePattern)]
+      .map((match) => match[0])
+      .filter((name) => name.length > 2 && !bodyStopPhrases.has(name))
+  );
+}
+
+function titleEntityNameBeforeTrigger(value: string): string {
+  const koreanNames = koreanEntityNames(value);
+  if (koreanNames.length > 0) {
+    return koreanNames[koreanNames.length - 1];
+  }
+
+  const englishNames = englishProperNames(value);
+  if (englishNames.length > 0) {
+    return englishNames[englishNames.length - 1];
+  }
+
+  const segments = value.split(/[,，:|]/u).map(normalizeName).filter(Boolean);
+  return segments[segments.length - 1] ?? value;
+}
+
 function extractTitleEntity(document: SourceDocument): Entity | undefined {
   const title = normalizeName(document.title);
   const lowerTitle = title.toLowerCase();
@@ -253,7 +321,7 @@ function extractTitleEntity(document: SourceDocument): Entity | undefined {
   for (const trigger of titleTriggers) {
     const index = lowerTitle.indexOf(trigger.toLowerCase());
     if (index > 1) {
-      const displayName = title.slice(0, index);
+      const displayName = titleEntityNameBeforeTrigger(title.slice(0, index));
       return createEntity(displayName, "title", 0.72, inferEntityType(displayName, document));
     }
   }
@@ -302,6 +370,39 @@ function extractRepeatedBodyEntities(document: SourceDocument): Entity[] {
     .filter((entity): entity is Entity => Boolean(entity));
 }
 
+function extractKoreanBodyEntities(document: SourceDocument): Entity[] {
+  const byName = new Map<string, { displayName: string; paragraphIds: string[]; count: number }>();
+
+  for (const paragraph of document.paragraphs) {
+    if (!koreanActionTriggerPattern.test(paragraph.text) && !koreanActionTriggerPattern.test(document.title)) {
+      continue;
+    }
+
+    for (const displayName of koreanEntityNames(paragraph.text)) {
+      const key = normalizedKey(displayName);
+      const current = byName.get(key) ?? { displayName, paragraphIds: [], count: 0 };
+      current.count += 1;
+      if (!current.paragraphIds.includes(paragraph.id)) {
+        current.paragraphIds.push(paragraph.id);
+      }
+      byName.set(key, current);
+    }
+  }
+
+  return [...byName.values()]
+    .map(({ displayName, paragraphIds, count }) =>
+      createEntity(
+        displayName,
+        "body",
+        Math.min(0.74, 0.58 + count * 0.08),
+        inferEntityType(displayName, document),
+        [],
+        paragraphIds
+      )
+    )
+    .filter((entity): entity is Entity => Boolean(entity));
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -333,6 +434,7 @@ export function extractEntitiesFromDocument(document: SourceDocument): Entity[] 
   }
 
   entities.push(...extractRepeatedBodyEntities(document));
+  entities.push(...extractKoreanBodyEntities(document));
 
   return uniqueEntities(entities);
 }
