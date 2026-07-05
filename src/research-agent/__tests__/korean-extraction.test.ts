@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateCandidatesFromDocument } from "../candidate-from-document.ts";
+import { extractEntitiesFromDocument } from "../entity.ts";
 import { candidatesFromDocumentOrFallback } from "../source-candidates.ts";
 import type { RawSourceItem, RawSourceCategory, SourceDocument } from "../types.ts";
 
@@ -124,6 +125,20 @@ describe("Korean entity and evidence extraction", () => {
     expect(candidate.evidenceParagraphIds).toEqual(["p1"]);
     expect(candidate.verificationStatus).toBe("verified");
     expect(candidate.briefAllowed).toBe(true);
+  });
+
+  it("keeps Korean trigger detection stable across repeated paragraphs", () => {
+    const document = documentWith("한국 스타트업 업데이트 모음", [
+      "리테일랩스는 프리A 투자 유치를 완료했다.",
+      "해빗프렌즈는 친구 체크인 기능을 출시했다."
+    ]);
+
+    for (let index = 0; index < 5; index += 1) {
+      const entityNames = extractEntitiesFromDocument(document).map((entity) => entity.displayName);
+
+      expect(entityNames).toContain("리테일랩스");
+      expect(entityNames).toContain("해빗프렌즈");
+    }
   });
 
   it("keeps generic Korean app trend pages as needs-research", () => {

@@ -129,6 +129,11 @@ export async function writeCandidatesToNotionAndMaybeSendTelegram(
   dryRun: boolean,
   dependencies: NotionTelegramDependencies = {}
 ): Promise<NotionWriteResult[]> {
+  if (candidates.length === 0) {
+    process.stderr.write(`Notion write summary: 0 ok, 0 failed, dryRun=${dryRun}\n`);
+    return [];
+  }
+
   const notionWriter = dependencies.writeCandidatesToNotion ?? writeCandidatesToNotion;
   const results = await notionWriter(candidates, readNotionConfig(dryRun));
   const successCount = results.filter((result) => result.ok).length;

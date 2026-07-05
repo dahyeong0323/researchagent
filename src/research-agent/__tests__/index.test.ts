@@ -54,6 +54,58 @@ function restoreEnv(name: string, value: string | undefined): void {
 }
 
 describe("research agent Notion and Telegram CLI flow", () => {
+  it("does not call Notion or Telegram for zero live candidates", async () => {
+    const previousNotionApiKey = process.env.NOTION_API_KEY;
+    const previousNotionDatabaseId = process.env.NOTION_DATABASE_ID;
+    const previousNotionDataSourceId = process.env.NOTION_DATA_SOURCE_ID;
+    delete process.env.NOTION_API_KEY;
+    delete process.env.NOTION_DATABASE_ID;
+    delete process.env.NOTION_DATA_SOURCE_ID;
+    let notionCalled = false;
+    let telegramCalled = false;
+
+    try {
+      const results = await writeCandidatesToNotionAndMaybeSendTelegram([], false, {
+        writeCandidatesToNotion: async () => {
+          notionCalled = true;
+          throw new Error("Notion writer should not be called");
+        },
+        sendTelegramDailySummary: async () => {
+          telegramCalled = true;
+          return true;
+        }
+      });
+
+      expect(results).toEqual([]);
+      expect(notionCalled).toBe(false);
+      expect(telegramCalled).toBe(false);
+    } finally {
+      restoreEnv("NOTION_API_KEY", previousNotionApiKey);
+      restoreEnv("NOTION_DATABASE_ID", previousNotionDatabaseId);
+      restoreEnv("NOTION_DATA_SOURCE_ID", previousNotionDataSourceId);
+    }
+  });
+
+  it("does not call Notion or Telegram for zero dry-run candidates", async () => {
+    let notionCalled = false;
+    let telegramCalled = false;
+
+    const results = await writeCandidatesToNotionAndMaybeSendTelegram([], true, {
+      writeCandidatesToNotion: async () => {
+        notionCalled = true;
+        return [];
+      },
+      sendTelegramDailySummary: async () => {
+        telegramCalled = true;
+        return true;
+      }
+    });
+
+    expect(results).toEqual([]);
+    expect(notionCalled).toBe(false);
+    expect(telegramCalled).toBe(false);
+  });
+
   it("sends Telegram only for successful Notion writes", async () => {
     const previousTelegramEnabled = process.env.TELEGRAM_ENABLED;
     const candidates = [
