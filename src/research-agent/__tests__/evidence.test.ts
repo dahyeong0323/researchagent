@@ -52,13 +52,22 @@ describe("evidence extraction", () => {
       evidenceType: "article",
       sourceUrl: "https://news.acme.test/story",
       paragraphId: "p1",
-      trigger: "open"
+      trigger: "opened"
     });
   });
 
   it("does not invent evidence without an entity-trigger sentence", () => {
     const evidence = extractEvidenceForEntity(
       documentWithParagraph("The company is known for skincare retail."),
+      entity
+    );
+
+    expect(evidence).toHaveLength(0);
+  });
+
+  it("does not match English triggers inside unrelated words", () => {
+    const evidence = extractEvidenceForEntity(
+      documentWithParagraph("Acme Beauty sponsored a creator contest in Seoul."),
       entity
     );
 

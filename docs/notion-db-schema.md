@@ -171,7 +171,7 @@ npm.cmd run export:selected -- --feedback data/research-agent/feedback.notion.js
 
 ## Notes
 
-`Candidate ID` stores `ScoutCandidate.id`. Telegram callbacks can use this value later to find the candidate and update its status without relying on the Notion page ID.
+`Candidate ID` stores `ScoutCandidate.id`. Telegram callbacks use compact callback data and local callback refs, then match this value later to find the candidate and update its status without relying on the Notion page ID.
 
 The writer uses Notion's create page API with a parent database or data source and a `properties` object whose keys match the schema above. Long interpretive fields are also copied into the page body as readable blocks.
 
@@ -200,7 +200,7 @@ Prompt 3 adds workflow fields so Notion can separate candidate triage, verificat
 ### Mapping Rules
 
 - `verified` + `Brief Allowed = true`: `Writing Brief Status = ready`, `Next Action = Make Writing Brief`.
-- `needs-research`: `Brief Allowed = false`, `Workflow Status = Needs Research`, `Research Task Status = open`, `Next Action = Make Research Task`.
+- `needs-research`: primary `상태` remains a normal triage value such as `New`; `Brief Allowed = false`, `Workflow Status = Needs Research`, `Research Task Status = open`, `Next Action = Make Research Task`.
 - `rejected`: `Brief Allowed = false`, `Workflow Status = Rejected`, `Writing Brief Status = blocked`, `Next Action = Reject`.
 
 ### Select Values Used By Code

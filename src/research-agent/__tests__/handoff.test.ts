@@ -121,13 +121,23 @@ describe("writing agent handoff", () => {
     ).toThrow("verified and briefAllowed");
   });
 
-  it("blocks candidates missing evidenceSnippet", () => {
+  it("allows candidates with evidence paragraph ids when evidenceSnippet is missing", () => {
+    const payload = createWritingAgentHandoffPayload(
+      candidate({ evidenceSnippet: undefined, evidenceParagraphIds: ["p7"] }),
+      brief()
+    );
+
+    expect(payload.evidenceSnippet).toBe("Evidence paragraph ids: p7");
+    expect(payload.evidenceParagraphIds).toEqual(["p7"]);
+  });
+
+  it("blocks candidates missing all evidence references", () => {
     expect(() =>
       createWritingAgentHandoffPayload(
-        candidate({ evidenceSnippet: undefined }),
+        candidate({ evidenceSnippet: undefined, evidenceParagraphIds: [] }),
         brief()
       )
-    ).toThrow("evidenceSnippet");
+    ).toThrow("evidenceSnippet or evidenceParagraphIds");
   });
 
   it("requires human approval", () => {

@@ -1053,3 +1053,16 @@ Human
 **그 이후:** 글쓰기 에이전트 연결, 성과 분석 API 검토
 
 처음 Codex에 넣을 건 `Task 1`부터야. `Notion`이랑 `LLM`을 첫 프롬프트에 같이 넣지 말고, 먼저 local 엔진부터 만들게 하는 게 안전해.
+
+---
+
+## Current Implementation Notes
+
+The implementation has moved beyond the original MVP notes in several safety-critical places:
+
+- Verification is strict: a candidate cannot become `verified` or `briefAllowed` unless source URL, entity, entity type, observed feature, evidence type, and source-backed evidence provenance pass.
+- `Needs Research` is a workflow state, not a primary Notion `상태` value. The primary `상태` remains one of `New`, `Shortlisted`, `Selected`, `Written`, `Published`, or `Rejected`.
+- `daily:dry` is side-effect free. It does not write Notion payloads, Telegram messages, run artifacts, candidate snapshots, or candidate history.
+- Live daily runs write `data/research-agent/runs/latest-candidates.json` so Telegram brief/task buttons resolve candidates from the latest run instead of sample input.
+- Telegram callbacks use compact callback data and local refs to support long or colon-containing candidate IDs while staying within Telegram's callback byte limit.
+- Writing Brief and handoff paths require verified, source-backed candidates. Paragraph-ID evidence is accepted where strict verification has proven it came from a `SourceDocument`.

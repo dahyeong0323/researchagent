@@ -93,6 +93,7 @@ export type SourceDocument = {
   siteType?: string;
   contentText: string;
   contentMarkdown?: string;
+  rawHtml?: string;
   paragraphs: SourceParagraph[];
   sourceCategory?: RawSourceCategory;
   collectedAt?: string;

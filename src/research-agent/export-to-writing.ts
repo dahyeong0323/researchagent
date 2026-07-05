@@ -17,6 +17,8 @@ import type {
 loadLocalEnv();
 
 export const DEFAULT_WRITING_BRIEF_OUTPUT_DIR = "data/research-agent/writing-briefs";
+const DEFAULT_DAILY_CANDIDATE_SNAPSHOT_PATH =
+  process.env.RESEARCH_AGENT_DAILY_CANDIDATES_PATH ?? "data/research-agent/runs/latest-candidates.json";
 
 type CliOptions = {
   inputPath: string;
@@ -71,6 +73,34 @@ export function assertRawSourceItems(value: unknown): asserts value is RawSource
   }
 }
 
+function isScoutCandidate(value: unknown): value is ScoutCandidate {
+  return Boolean(value) &&
+    typeof value === "object" &&
+    typeof (value as Partial<ScoutCandidate>).id === "string" &&
+    typeof (value as Partial<ScoutCandidate>).candidateId === "string" &&
+    typeof (value as Partial<ScoutCandidate>).topicName === "string" &&
+    typeof (value as Partial<ScoutCandidate>).sourceUrl === "string" &&
+    typeof (value as Partial<ScoutCandidate>).verificationStatus === "string" &&
+    typeof (value as Partial<ScoutCandidate>).briefAllowed === "boolean";
+}
+
+async function readDailyCandidateSnapshot(path: string): Promise<ScoutCandidate[]> {
+  try {
+    const parsed = JSON.parse(await readFile(resolve(path), "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || !("candidates" in parsed)) {
+      return [];
+    }
+
+    const candidates = (parsed as { candidates: unknown }).candidates;
+    return Array.isArray(candidates) ? candidates.filter(isScoutCandidate) : [];
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  }
+}
+
 function selectedIds(memory: FeedbackMemory): Set<string> {
   return new Set(
     memory.candidateFeedback
@@ -98,6 +128,35 @@ function isSelectedCandidate(candidate: ScoutCandidate, memory: FeedbackMemory):
       candidate.oneLineSummary.includes(topic) ||
       candidate.coreWhyGudiQuestion.includes(topic)
   );
+}
+
+function findCandidate(candidates: ScoutCandidate[], candidateId: string): ScoutCandidate | undefined {
+  return candidates.find((item) => item.id === candidateId || item.candidateId === candidateId);
+}
+
+async function candidatesFromRawInput(inputPath: string, feedbackPath: string | undefined): Promise<ScoutCandidate[]> {
+  const input = await readFile(resolve(inputPath), "utf8");
+  const parsed: unknown = JSON.parse(input);
+  assertRawSourceItems(parsed);
+
+  const memory = await readFeedbackMemory(feedbackPath);
+  return processRawCandidates(parsed, parsed.length, memory);
+}
+
+async function findCandidateForExport(
+  candidateId: string,
+  options: { inputPath?: string; feedbackPath?: string; candidateSnapshotPath?: string }
+): Promise<ScoutCandidate | undefined> {
+  const snapshotCandidates = await readDailyCandidateSnapshot(
+    options.candidateSnapshotPath ?? DEFAULT_DAILY_CANDIDATE_SNAPSHOT_PATH
+  );
+  const snapshotCandidate = findCandidate(snapshotCandidates, candidateId);
+  if (snapshotCandidate) {
+    return snapshotCandidate;
+  }
+
+  const rawCandidates = await candidatesFromRawInput(options.inputPath ?? DEFAULT_INPUT_PATH, options.feedbackPath);
+  return findCandidate(rawCandidates, candidateId);
 }
 
 function candidateText(candidate: ScoutCandidate): string {
@@ -404,16 +463,40 @@ export function inferEvidenceNeeded(candidate: ScoutCandidate): string[] {
     evidence.push("고객군, 수익 모델, 투자금 사용처, 실제 traction 관련 공개 근거 확인");
   }
 
-  return evidence;
+  evidence.push(...(candidate.needsVerification ?? []));
+
+  if (candidate.missingFields && candidate.missingFields.length > 0) {
+    evidence.push(...candidate.missingFields.map((field) => `검증 누락 필드 보완: ${field}`));
+  }
+
+  return [...new Set(evidence)];
 }
 
 export function inferEvidenceBoundary(candidate: ScoutCandidate): WritingBrief["evidenceBoundary"] {
   const confirmedFacts = [
+    ...(candidate.confirmedFacts ?? []),
     `입력 출처는 '${candidate.topicName}'을 소재 후보로 제시한다.`,
     `출처 요약: ${candidate.oneLineSummary}`
   ];
 
+  if (candidate.entityName) {
+    confirmedFacts.push(`검증된 엔티티: ${candidate.entityName} (${candidate.entityType})`);
+  }
+
+  if (candidate.observedFeature) {
+    confirmedFacts.push(`검증된 관찰 기능/선택: ${candidate.observedFeature}`);
+  }
+
+  if (candidate.evidenceSnippet) {
+    confirmedFacts.push(`출처 증거 문장: ${candidate.evidenceSnippet}`);
+  }
+
+  if (candidate.evidenceParagraphIds && candidate.evidenceParagraphIds.length > 0) {
+    confirmedFacts.push(`증거 paragraph id: ${candidate.evidenceParagraphIds.join(", ")}`);
+  }
+
   const reasonableInferences = [
+    ...(candidate.reasonableInferences ?? []),
     inferCoreTension(candidate),
     inferBusinessMechanism(candidate),
     inferConsumerPsychology(candidate)
@@ -427,6 +510,12 @@ export function inferEvidenceBoundary(candidate: ScoutCandidate): WritingBrief["
 
   if (isUnverifiedSource(candidate)) {
     needsVerification.push("현재 후보가 샘플/수동 입력 기반이면 실제 공개 출처로 교체");
+  }
+
+  needsVerification.push(...(candidate.needsVerification ?? []));
+
+  if (candidate.missingFields && candidate.missingFields.length > 0) {
+    needsVerification.push(...candidate.missingFields.map((field) => `검증 누락 필드: ${field}`));
   }
 
   return {
@@ -512,6 +601,10 @@ function counterArgumentsFor(candidate: ScoutCandidate): string[] {
 }
 
 export function toWritingBrief(candidate: ScoutCandidate): WritingBrief {
+  if (candidate.verificationStatus !== "verified" || !candidate.briefAllowed) {
+    throw new Error("Writing brief blocked: candidate must be verified and briefAllowed.");
+  }
+
   return {
     topicName: candidate.topicName,
     coreWhyGudiQuestion: candidate.coreWhyGudiQuestion,
@@ -590,6 +683,10 @@ function stringArrayFromKey(record: Record<string, unknown>, key: string): strin
   return items.length > 0 ? items.map((item) => item.trim()) : undefined;
 }
 
+function mergeStringArrays(first: string[], second?: string[]): string[] {
+  return [...new Set([...first, ...(second ?? [])])];
+}
+
 function styleReferenceFromRecord(
   record: Record<string, unknown>,
   fallback: WritingBriefStyleReference
@@ -612,9 +709,12 @@ function evidenceBoundaryFromRecord(
   }
 
   return {
-    confirmedFacts: stringArrayFromKey(value, "confirmedFacts") ?? fallback.confirmedFacts,
-    reasonableInferences: stringArrayFromKey(value, "reasonableInferences") ?? fallback.reasonableInferences,
-    needsVerification: stringArrayFromKey(value, "needsVerification") ?? fallback.needsVerification
+    confirmedFacts: mergeStringArrays(fallback.confirmedFacts, stringArrayFromKey(value, "confirmedFacts")),
+    reasonableInferences: mergeStringArrays(
+      fallback.reasonableInferences,
+      stringArrayFromKey(value, "reasonableInferences")
+    ),
+    needsVerification: mergeStringArrays(fallback.needsVerification, stringArrayFromKey(value, "needsVerification"))
   };
 }
 
@@ -646,7 +746,7 @@ function mergeDeepBriefFields(base: WritingBrief, value: unknown): WritingBrief 
     genericThesisToAvoid: stringArrayFromRecord(value, "genericThesisToAvoid") ?? base.genericThesisToAvoid,
     betterOpeningScene: stringFromRecord(value, "betterOpeningScene") ?? base.betterOpeningScene,
     postOutline: stringArrayFromRecord(value, "postOutline") ?? base.postOutline,
-    evidenceNeeded: stringArrayFromRecord(value, "evidenceNeeded") ?? base.evidenceNeeded,
+    evidenceNeeded: mergeStringArrays(base.evidenceNeeded, stringArrayFromRecord(value, "evidenceNeeded")),
     evidenceBoundary: evidenceBoundaryFromRecord(value, base.evidenceBoundary),
     possibleStructure: stringArrayFromRecord(value, "postOutline") ?? base.possibleStructure,
     styleReference: styleReferenceFromRecord(value, base.styleReference)
@@ -664,6 +764,7 @@ function buildDeepBriefPrompt(candidate: ScoutCandidate): string {
     "핵심 질문은 refinedCoreQuestion에 20~35자 내외의 자연스러운 한국어 질문으로 다시 써라.",
     "postOutline은 모든 섹션을 반복하지 말고 실제 LinkedIn 글의 전개처럼 7~9개 bullet로 써라.",
     "확인된 사실과 추론을 evidenceBoundary.confirmedFacts, evidenceBoundary.reasonableInferences, evidenceBoundary.needsVerification로 분리해라.",
+    "입력의 evidenceSnippet, evidenceParagraphIds, confirmedFacts, needsVerification, missingFields는 삭제하거나 약화하지 말고 brief에 보존해라.",
     "출처에 없는 화면, 성과, 내부 전략, 유저 반응을 단정하지 마라.",
     "'기능 제공을 넘어', '생활 루틴', '흐름으로 해석', '소비자는 ~하기 시작한다' 같은 일반론 문장을 피하라.",
     "",
@@ -681,6 +782,19 @@ function buildDeepBriefPrompt(candidate: ScoutCandidate): string {
         coreWhyGudiQuestion: candidate.coreWhyGudiQuestion,
         businessObservationAngle: candidate.businessObservationAngle,
         consumerBehaviorAngle: candidate.consumerBehaviorAngle,
+        entityName: candidate.entityName,
+        entityType: candidate.entityType,
+        observedFeature: candidate.observedFeature,
+        evidenceSnippet: candidate.evidenceSnippet,
+        evidenceType: candidate.evidenceType,
+        evidenceParagraphIds: candidate.evidenceParagraphIds,
+        confirmedFacts: candidate.confirmedFacts,
+        reasonableInferences: candidate.reasonableInferences,
+        needsVerification: candidate.needsVerification,
+        missingFields: candidate.missingFields,
+        verificationStatus: candidate.verificationStatus,
+        briefAllowed: candidate.briefAllowed,
+        verificationNotes: candidate.verificationNotes,
         sourceName: candidate.sourceName,
         sourceUrl: candidate.sourceUrl,
         recommendedFormat: candidate.recommendedFormat
@@ -893,15 +1007,16 @@ export async function writeWritingBriefForCandidate(
 
 export async function writeWritingBriefForCandidateId(
   candidateId: string,
-  options: { inputPath?: string; feedbackPath?: string; outputDir?: string; date?: string; useLlm?: boolean } = {}
+  options: {
+    inputPath?: string;
+    feedbackPath?: string;
+    candidateSnapshotPath?: string;
+    outputDir?: string;
+    date?: string;
+    useLlm?: boolean;
+  } = {}
 ): Promise<string | undefined> {
-  const input = await readFile(resolve(options.inputPath ?? DEFAULT_INPUT_PATH), "utf8");
-  const parsed: unknown = JSON.parse(input);
-  assertRawSourceItems(parsed);
-
-  const memory = await readFeedbackMemory(options.feedbackPath);
-  const candidates = processRawCandidates(parsed, parsed.length, memory);
-  const candidate = candidates.find((item) => item.id === candidateId || item.candidateId === candidateId);
+  const candidate = await findCandidateForExport(candidateId, options);
 
   if (!candidate) {
     return undefined;
@@ -916,15 +1031,9 @@ export async function writeWritingBriefForCandidateId(
 
 export async function writeResearchTaskForCandidateId(
   candidateId: string,
-  options: { inputPath?: string; feedbackPath?: string; outputDir?: string; date?: string } = {}
+  options: { inputPath?: string; feedbackPath?: string; candidateSnapshotPath?: string; outputDir?: string; date?: string } = {}
 ): Promise<string | undefined> {
-  const input = await readFile(resolve(options.inputPath ?? DEFAULT_INPUT_PATH), "utf8");
-  const parsed: unknown = JSON.parse(input);
-  assertRawSourceItems(parsed);
-
-  const memory = await readFeedbackMemory(options.feedbackPath);
-  const candidates = processRawCandidates(parsed, parsed.length, memory);
-  const candidate = candidates.find((item) => item.id === candidateId || item.candidateId === candidateId);
+  const candidate = await findCandidateForExport(candidateId, options);
 
   if (!candidate) {
     return undefined;

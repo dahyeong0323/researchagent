@@ -13,7 +13,7 @@ function verifiedRawItem(overrides: Partial<RawSourceItem> = {}): RawSourceItem 
     id: overrides.id ?? "rss-verified-1",
     collectorType: "rss",
     title: overrides.title ?? "Acme Beauty launches refill station pop-up",
-    sourceUrl: overrides.sourceUrl ?? "https://news.acme.test/acme-refill",
+    sourceUrl: overrides.sourceUrl ?? "https://news.acme.co.kr/acme-refill",
     sourceName: overrides.sourceName ?? "Example Retail Feed",
     sourceCategory: overrides.sourceCategory ?? "retail_brand",
     sourcePublishedAt: overrides.sourcePublishedAt ?? "2026-07-01T00:00:00.000Z",
@@ -38,8 +38,8 @@ function sourceDocument(overrides: Partial<SourceDocument> = {}): SourceDocument
     sourceItemId: overrides.sourceItemId ?? "manual-raw-1",
     collectorType: "manual-url",
     documentType: "manual-url",
-    sourceUrl: overrides.sourceUrl ?? "https://news.acme.test/manual",
-    canonicalUrl: overrides.canonicalUrl ?? overrides.sourceUrl ?? "https://news.acme.test/manual",
+    sourceUrl: overrides.sourceUrl ?? "https://news.acme.co.kr/manual",
+    canonicalUrl: overrides.canonicalUrl ?? overrides.sourceUrl ?? "https://news.acme.co.kr/manual",
     title: overrides.title ?? "Acme Beauty launches refill station pop-up",
     siteName: overrides.siteName ?? "Example Manual News",
     siteType: "public-web",
@@ -68,7 +68,7 @@ async function tempRunPaths() {
   const feeds: FeedConfig[] = [
     {
       feedName: "Example Feed",
-      feedUrl: "https://news.acme.test/rss.xml",
+      feedUrl: "https://news.acme.co.kr/rss.xml",
       sourceCategory: "retail_brand",
       reliabilityTier: 4
     }
@@ -81,6 +81,8 @@ async function tempRunPaths() {
 describe("daily batch runner", () => {
   it("daily dry-run completes without Notion or Telegram secrets", async () => {
     const paths = await tempRunPaths();
+    let notionCalled = false;
+    let telegramCalled = false;
     try {
       const result = await runDaily(
         {
@@ -92,19 +94,29 @@ describe("daily batch runner", () => {
         },
         {
           now,
-          collectRssFeeds: async () => [verifiedRawItem()]
+          collectRssFeeds: async () => [verifiedRawItem()],
+          writeCandidatesToNotion: async () => {
+            notionCalled = true;
+            return [];
+          },
+          sendTelegramDailySummary: async () => {
+            telegramCalled = true;
+            return true;
+          }
         }
       );
 
       expect(result.artifact.runId).toBe("research-agent:2026-07-04");
-      expect(result.artifact.notionWritten).toBe(1);
+      expect(result.artifact.notionWritten).toBe(0);
       expect(result.artifact.telegramSent).toBe(0);
+      expect(notionCalled).toBe(false);
+      expect(telegramCalled).toBe(false);
     } finally {
       await rm(paths.root, { recursive: true, force: true });
     }
   });
 
-  it("creates a run artifact", async () => {
+  it("does not create a run artifact during dry-run", async () => {
     const paths = await tempRunPaths();
     try {
       const result = await runDaily(
@@ -120,9 +132,51 @@ describe("daily batch runner", () => {
           collectRssFeeds: async () => [verifiedRawItem()]
         }
       );
-      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as { candidateCounts: { total: number } };
+
+      await expect(readFile(result.artifactPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+      expect(result.artifact.candidateCounts.total).toBe(1);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a run artifact for live runs", async () => {
+    const paths = await tempRunPaths();
+    try {
+      const result = await runDaily(
+        {
+          dryRun: false,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [verifiedRawItem()],
+          writeCandidatesToNotion: async (candidates) =>
+            candidates.map((candidate) => ({
+              ok: true,
+              candidateId: candidate.id,
+              topicName: candidate.topicName,
+              dryRun: false
+            })),
+          sendTelegramDailySummary: async () => false
+        }
+      );
+      const artifact = JSON.parse(await readFile(result.artifactPath, "utf8")) as {
+        candidateCounts: { total: number };
+        candidateRefs: unknown[];
+        candidateSnapshotPath?: string;
+      };
+      const snapshot = JSON.parse(await readFile(result.artifact.candidateSnapshotPath ?? "", "utf8")) as {
+        candidates: unknown[];
+      };
 
       expect(artifact.candidateCounts.total).toBe(1);
+      expect(artifact.candidateRefs).toHaveLength(1);
+      expect(artifact.candidateSnapshotPath).toBe(result.artifact.candidateSnapshotPath);
+      expect(snapshot.candidates).toHaveLength(1);
     } finally {
       await rm(paths.root, { recursive: true, force: true });
     }
@@ -200,11 +254,11 @@ describe("daily batch runner", () => {
         {
           now,
           collectRssFeeds: async () => [
-            verifiedRawItem({ id: "one", title: "Acme Beauty launches refill station pop-up one", sourceUrl: "https://news.acme.test/one" }),
+            verifiedRawItem({ id: "one", title: "Acme Beauty launches refill station pop-up one", sourceUrl: "https://news.acme.co.kr/one" }),
             verifiedRawItem({
               id: "two",
               title: "Beta Market opens Seoul store",
-              sourceUrl: "https://news.acme.test/two",
+              sourceUrl: "https://news.acme.co.kr/two",
               rawSummary: "Beta Market opened a small-format Seoul store for weekly grocery missions.",
               entityName: "Beta Market",
               observedFeature: "small-format Seoul grocery store",
@@ -213,7 +267,7 @@ describe("daily batch runner", () => {
             verifiedRawItem({
               id: "three",
               title: "Coda App launches new feature",
-              sourceUrl: "https://news.acme.test/three",
+              sourceUrl: "https://news.acme.co.kr/three",
               rawSummary: "Coda App launched an approval workflow for team onboarding.",
               entityName: "Coda App",
               observedFeature: "approval workflow launch",
@@ -244,7 +298,7 @@ describe("daily batch runner", () => {
   it("does not duplicate manual raw fallback when a document candidate exists", async () => {
     const paths = await tempRunPaths();
     try {
-      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.test/manual"])}\n`, "utf8");
+      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.co.kr/manual"])}\n`, "utf8");
       const result = await runDaily(
         {
           dryRun: true,
@@ -260,7 +314,7 @@ describe("daily batch runner", () => {
             rawSourceItem: verifiedRawItem({
               id: "manual-raw-1",
               collectorType: "manual-url",
-              sourceUrl: "https://news.acme.test/manual"
+              sourceUrl: "https://news.acme.co.kr/manual"
             }),
             sourceDocument: sourceDocument()
           })
@@ -277,7 +331,7 @@ describe("daily batch runner", () => {
   it("creates one needs-research fallback candidate when manual document extraction finds no entity", async () => {
     const paths = await tempRunPaths();
     try {
-      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.test/plain"])}\n`, "utf8");
+      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.co.kr/plain"])}\n`, "utf8");
       const result = await runDaily(
         {
           dryRun: true,
@@ -294,7 +348,7 @@ describe("daily batch runner", () => {
               id: "manual-raw-plain",
               collectorType: "manual-url",
               title: "plain update",
-              sourceUrl: "https://news.acme.test/plain",
+              sourceUrl: "https://news.acme.co.kr/plain",
               rawSummary: "lower waste shopping rituals without a named entity",
               entityName: undefined,
               entityType: "unknown",
@@ -339,13 +393,133 @@ describe("daily batch runner", () => {
             rawSourceItems: [verifiedRawItem({ evidenceSnippet: undefined, verificationStatus: "needs-research" })],
             sourceDocuments: [],
             candidates: [],
-            errors: ["rss-entry:https://news.acme.test/acme-refill: article unavailable"]
+            errors: ["rss-entry:https://news.acme.co.kr/acme-refill: article unavailable"]
           })
         }
       );
 
       expect(result.artifact.errors.some((error) => error.includes("article unavailable"))).toBe(true);
       expect(result.artifact.candidateCounts.total).toBe(0);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("dedupes raw and document-derived candidates globally", async () => {
+    const paths = await tempRunPaths();
+    try {
+      await writeFile(paths.manualInboxPath, `${JSON.stringify(["https://news.acme.co.kr/acme-refill"])}\n`, "utf8");
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [verifiedRawItem()],
+          collectManualUrl: async () => ({
+            rawSourceItem: verifiedRawItem({
+              id: "manual-raw-1",
+              collectorType: "manual-url",
+              sourceUrl: "https://news.acme.co.kr/acme-refill"
+            }),
+            sourceDocument: sourceDocument({
+              id: "manual-doc-1",
+              documentId: "manual-doc-1",
+              sourceUrl: "https://news.acme.co.kr/acme-refill",
+              canonicalUrl: "https://news.acme.co.kr/acme-refill"
+            })
+          })
+        }
+      );
+
+      expect(result.candidates).toHaveLength(1);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("applies feedback memory when scoring daily raw candidates", async () => {
+    const paths = await tempRunPaths();
+    try {
+      const feedbackPath = join(paths.root, "feedback.json");
+      await writeFile(
+        feedbackPath,
+        `${JSON.stringify({
+          recentTopics: ["Acme Beauty launches refill station pop-up"],
+          candidateFeedback: []
+        })}\n`,
+        "utf8"
+      );
+
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir,
+          feedbackPath
+        },
+        {
+          now,
+          collectRssFeeds: async () => [verifiedRawItem()]
+        }
+      );
+
+      expect(result.candidates[0]?.overlapRisk).toBe("높음");
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("skips candidates already recorded in live-run history", async () => {
+    const paths = await tempRunPaths();
+    let notionCalls = 0;
+    const dependencies = {
+      now,
+      collectRssFeeds: async () => [verifiedRawItem()],
+      writeCandidatesToNotion: async (candidates: Awaited<ReturnType<typeof runDaily>>["candidates"]) => {
+        notionCalls += 1;
+        return candidates.map((candidate) => ({
+          ok: true,
+          candidateId: candidate.id,
+          topicName: candidate.topicName,
+          dryRun: false
+        }));
+      },
+      sendTelegramDailySummary: async () => false
+    };
+
+    try {
+      const first = await runDaily(
+        {
+          dryRun: false,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        dependencies
+      );
+      const second = await runDaily(
+        {
+          dryRun: false,
+          date: "2026-07-05",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        dependencies
+      );
+
+      expect(first.artifact.candidateCounts.total).toBe(1);
+      expect(second.artifact.candidateCounts.total).toBe(0);
+      expect(second.artifact.historySkipped).toBe(1);
+      expect(notionCalls).toBe(1);
     } finally {
       await rm(paths.root, { recursive: true, force: true });
     }

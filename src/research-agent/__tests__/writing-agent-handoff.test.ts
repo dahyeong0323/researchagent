@@ -48,6 +48,7 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     observedFeature: "refill station launch",
     evidenceSnippet: "Acme Beauty launched a refill station pop-up.",
     evidenceType: "article",
+    evidenceParagraphIds: ["p1"],
     verificationStatus: "verified",
     confirmedFacts: ["Acme Beauty launched a refill station pop-up."],
     reasonableInferences: ["The refill station may support repeat visits."],
@@ -115,10 +116,20 @@ describe("writing agent handoff payload", () => {
     ).toThrow("verified");
   });
 
-  it("throws when evidenceSnippet is missing", () => {
+  it("allows paragraph-based evidence when evidenceSnippet is missing", () => {
+    const payload = buildWritingAgentHandoffPayload(
+      candidate({ evidenceSnippet: undefined, evidenceParagraphIds: ["p9"] }),
+      brief()
+    );
+
+    expect(payload.evidenceSnippet).toBe("Evidence paragraph ids: p9");
+    expect(payload.evidenceParagraphIds).toEqual(["p9"]);
+  });
+
+  it("throws when all evidence references are missing", () => {
     expect(() =>
-      buildWritingAgentHandoffPayload(candidate({ evidenceSnippet: undefined }), brief())
-    ).toThrow("evidenceSnippet");
+      buildWritingAgentHandoffPayload(candidate({ evidenceSnippet: undefined, evidenceParagraphIds: [] }), brief())
+    ).toThrow("evidenceSnippet or evidenceParagraphIds");
   });
 
   it("copies unresolved needsVerification into prohibited claims", () => {

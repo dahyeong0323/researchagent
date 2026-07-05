@@ -4,6 +4,11 @@ import { pathToFileURL } from "node:url";
 import { loadLocalEnv } from "./env.ts";
 import { writeResearchTaskForCandidateId, writeWritingBriefForCandidateId } from "./export-to-writing.ts";
 import { readNotionConfig, updateCandidateStatusByCandidateId } from "./notion.ts";
+import {
+  buildTelegramCallbackData,
+  parseTelegramCallbackData,
+  registerTelegramCallbackCandidateIds
+} from "./telegram-callback.ts";
 import { readTelegramConfig, sendTelegramMessage, type TelegramReplyMarkup } from "./telegram.ts";
 
 loadLocalEnv();
@@ -11,29 +16,12 @@ loadLocalEnv();
 const TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const DEFAULT_OFFSET_PATH = "data/research-agent/telegram-offset.json";
 
-type StatusCallbackAction = "selected" | "shortlisted" | "rejected" | "needs-research";
-type CallbackAction = StatusCallbackAction | "research-task:create" | "brief:create";
-type NotionStatus = "Selected" | "Shortlisted" | "Rejected" | "Needs Research";
-
-type ParsedCallbackData = {
-  action: CallbackAction;
-  candidateId: string;
-  status?: NotionStatus;
-};
-
 type TelegramUpdate = {
   update_id: number;
   callback_query?: {
     id: string;
     data?: string;
   };
-};
-
-const STATUS_BY_ACTION: Record<StatusCallbackAction, NotionStatus> = {
-  selected: "Selected",
-  shortlisted: "Shortlisted",
-  rejected: "Rejected",
-  "needs-research": "Needs Research"
 };
 
 function warn(message: string): void {
@@ -44,42 +32,7 @@ function info(message: string): void {
   process.stderr.write(`Telegram poll: ${message}\n`);
 }
 
-export function parseTelegramCallbackData(data?: string): ParsedCallbackData | undefined {
-  if (!data) {
-    return undefined;
-  }
-
-  const parts = data.split(":");
-  if (parts.length !== 3) {
-    return undefined;
-  }
-
-  const [group, actionName, candidateIdValue] = parts;
-  const candidateId = candidateIdValue.trim();
-
-  if ((group === "brief" || group === "task" || group === "research-task") && actionName === "create" && candidateId) {
-    return {
-      action: group === "task" ? "research-task:create" : (`${group}:create` as CallbackAction),
-      candidateId
-    };
-  }
-
-  if (group !== "status") {
-    return undefined;
-  }
-
-  const status = STATUS_BY_ACTION[actionName as StatusCallbackAction];
-
-  if (!status || !candidateId) {
-    return undefined;
-  }
-
-  return {
-    action: actionName as StatusCallbackAction,
-    candidateId,
-    status
-  };
-}
+export { parseTelegramCallbackData } from "./telegram-callback.ts";
 
 function buildWritingBriefKeyboard(candidateId: string): TelegramReplyMarkup {
   return {
@@ -87,7 +40,7 @@ function buildWritingBriefKeyboard(candidateId: string): TelegramReplyMarkup {
       [
         {
           text: "Writing Brief 만들기",
-          callback_data: `brief:${candidateId}`
+          callback_data: buildTelegramCallbackData("brief:create", candidateId)
         }
       ]
     ]
@@ -100,11 +53,11 @@ function buildPostSelectionKeyboard(candidateId: string): TelegramReplyMarkup {
       [
         {
           text: "Make Writing Brief",
-          callback_data: `brief:create:${candidateId}`
+          callback_data: buildTelegramCallbackData("brief:create", candidateId)
         },
         {
           text: "Make Research Task",
-          callback_data: `research-task:create:${candidateId}`
+          callback_data: buildTelegramCallbackData("research-task:create", candidateId)
         }
       ]
     ]
@@ -248,6 +201,9 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
   const topicName = result.topicName ?? parsed.candidateId;
   const confirmation = `${parsed.status} 처리 완료: ${topicName}`;
   await answerCallbackQuery(botToken, callbackQuery.id, confirmation);
+  await registerTelegramCallbackCandidateIds([parsed.candidateId]).catch((error) =>
+    warn(error instanceof Error ? error.message : String(error))
+  );
   await sendTelegramMessage(
     confirmation,
     parsed.action === "selected" ? buildPostSelectionKeyboard(parsed.candidateId) : undefined
@@ -273,10 +229,9 @@ async function pollOnce(): Promise<void> {
   for (const update of updates) {
     try {
       await processUpdate(update, telegramConfig.botToken);
+      await writeOffset(update.update_id + 1);
     } catch (error) {
       warn(error instanceof Error ? error.message : String(error));
-    } finally {
-      await writeOffset(update.update_id + 1);
     }
   }
 

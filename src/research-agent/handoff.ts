@@ -12,6 +12,7 @@ export interface WritingAgentHandoffPayload {
   sourceName: string;
   sourcePublishedAt?: string;
   evidenceSnippet: string;
+  evidenceParagraphIds: string[];
   confirmedFacts: string[];
   reasonableInferences: string[];
   needsVerification: string[];
@@ -37,8 +38,8 @@ function assertHandoffAllowed(candidate: ScoutCandidate): void {
     throw new Error("Writing handoff blocked: observedFeature is required.");
   }
 
-  if (!candidate.evidenceSnippet) {
-    throw new Error("Writing handoff blocked: evidenceSnippet is required.");
+  if (!candidate.evidenceSnippet && (!candidate.evidenceParagraphIds || candidate.evidenceParagraphIds.length === 0)) {
+    throw new Error("Writing handoff blocked: evidenceSnippet or evidenceParagraphIds is required.");
   }
 }
 
@@ -53,6 +54,10 @@ function prohibitedClaimsFor(candidate: ScoutCandidate): string[] {
 
 function sourceUrlsFor(candidate: ScoutCandidate, brief: WritingBrief): string[] {
   return [...new Set([candidate.sourceUrl, ...brief.sourceUrls].filter((url) => url.trim() !== ""))];
+}
+
+function evidenceSnippetFor(candidate: ScoutCandidate): string {
+  return candidate.evidenceSnippet ?? `Evidence paragraph ids: ${(candidate.evidenceParagraphIds ?? []).join(", ")}`;
 }
 
 export function createWritingAgentHandoffPayload(
@@ -75,7 +80,8 @@ export function createWritingAgentHandoffPayload(
     sourceUrls: sourceUrlsFor(candidate, brief),
     sourceName: candidate.sourceName,
     sourcePublishedAt: candidate.sourcePublishedAt,
-    evidenceSnippet: candidate.evidenceSnippet as string,
+    evidenceSnippet: evidenceSnippetFor(candidate),
+    evidenceParagraphIds: candidate.evidenceParagraphIds ?? [],
     confirmedFacts: candidate.confirmedFacts ?? brief.evidenceBoundary.confirmedFacts,
     reasonableInferences: candidate.reasonableInferences ?? brief.evidenceBoundary.reasonableInferences,
     needsVerification: candidate.needsVerification ?? brief.evidenceBoundary.needsVerification,

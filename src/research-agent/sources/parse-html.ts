@@ -75,6 +75,20 @@ function fallbackBodyText(html: string): string {
   return normalizeWhitespace(stripTags(body));
 }
 
+function fallbackParagraphsFromText(text: string): SourceParagraph[] {
+  const paragraphs = text
+    .split(/(?<=[.!?。！？])\s+/u)
+    .map((item) => normalizeWhitespace(item))
+    .filter((item) => item.length >= 20);
+
+  const fallback = paragraphs.length > 0 ? paragraphs : [normalizeWhitespace(text)].filter((item) => item.length >= 20);
+  return fallback.map((item, index) => ({
+    id: `p${index + 1}`,
+    index,
+    text: item
+  }));
+}
+
 export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDocument {
   const cleanedHtml = html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
@@ -112,9 +126,10 @@ export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDo
   ]);
 
   const readableRegion = readableHtmlRegion(cleanedHtml);
-  const paragraphs = extractParagraphs(readableRegion);
-  const contentText =
-    paragraphs.length > 0 ? paragraphs.map((paragraph) => paragraph.text).join("\n\n") : fallbackBodyText(readableRegion);
+  const extractedParagraphs = extractParagraphs(readableRegion);
+  const fallbackText = extractedParagraphs.length > 0 ? "" : fallbackBodyText(readableRegion);
+  const paragraphs = extractedParagraphs.length > 0 ? extractedParagraphs : fallbackParagraphsFromText(fallbackText);
+  const contentText = paragraphs.length > 0 ? paragraphs.map((paragraph) => paragraph.text).join("\n\n") : fallbackText;
 
   if (normalizeWhitespace(contentText).length === 0) {
     throw new Error("Parsed HTML did not contain readable text.");

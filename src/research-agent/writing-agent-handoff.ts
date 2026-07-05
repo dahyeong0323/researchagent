@@ -23,8 +23,8 @@ export function assertWritingAgentHandoffAllowed(candidate: ScoutCandidate): voi
     throw new Error("Writing handoff blocked: observedFeature is required.");
   }
 
-  if (!candidate.evidenceSnippet) {
-    throw new Error("Writing handoff blocked: evidenceSnippet is required.");
+  if (!candidate.evidenceSnippet && (!candidate.evidenceParagraphIds || candidate.evidenceParagraphIds.length === 0)) {
+    throw new Error("Writing handoff blocked: evidenceSnippet or evidenceParagraphIds is required.");
   }
 
   if (!candidate.sourceUrl) {

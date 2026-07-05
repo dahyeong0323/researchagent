@@ -87,4 +87,49 @@ describe("RSS collector", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.sourceUrl).toBe("https://news.acme.test/beta-pickup");
   });
+
+  it("keeps RSS entries with invalid pubDate without throwing", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <guid>invalid-date</guid>
+      <title>Beta Market opens weekly grocery pickup store</title>
+      <link>https://news.acme.test/beta-invalid-date</link>
+      <pubDate>not a real date</pubDate>
+      <description>Beta Market opened a weekly grocery pickup store in Seoul.</description>
+    </item>
+  </channel>
+</rss>`;
+
+    const items = await collectRssFeeds(feeds, {
+      fetchImpl: fetchXml(xml),
+      now: new Date("2026-07-04T00:00:00.000Z")
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.sourcePublishedAt).toBeUndefined();
+    expect(items[0]?.publishedAt).toBeUndefined();
+  });
+
+  it("keeps one-word English brands with concrete launch signals", async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <guid>netflix-launch</guid>
+      <title>Netflix launches immersive retail pop-up</title>
+      <link>https://news.acme.test/netflix-pop-up</link>
+      <description>Netflix launched an immersive retail pop-up for fans in Seoul.</description>
+    </item>
+  </channel>
+</rss>`;
+
+    const items = await collectRssFeeds(feeds, {
+      fetchImpl: fetchXml(xml),
+      now: new Date("2026-07-04T00:00:00.000Z")
+    });
+
+    expect(items.map((item) => item.title)).toEqual(["Netflix launches immersive retail pop-up"]);
+  });
 });

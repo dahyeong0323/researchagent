@@ -12,7 +12,7 @@ The implementation lives in `src/research-agent/writing-agent-handoff.ts` and ex
 
 - Only `verificationStatus === "verified"` candidates can be handed off.
 - Only `briefAllowed === true` candidates can be handed off.
-- The payload must include `entityName`, `observedFeature`, `sourceUrl`, `sourceUrls`, and `evidenceSnippet`.
+- The payload must include `entityName`, `observedFeature`, `sourceUrl`, `sourceUrls`, and source-backed evidence. Evidence can be an `evidenceSnippet` or `evidenceParagraphIds`; paragraph-only candidates carry a paragraph reference string in `evidenceSnippet` for downstream compatibility.
 - `humanApprovalRequired` is always `true`.
 - The writing agent must not post, like, comment, DM, or automate LinkedIn activity.
 
@@ -31,6 +31,7 @@ interface WritingAgentHandoffPayload {
   sourceName: string;
   sourcePublishedAt?: string;
   evidenceSnippet: string;
+  evidenceParagraphIds: string[];
   confirmedFacts: string[];
   reasonableInferences: string[];
   needsVerification: string[];

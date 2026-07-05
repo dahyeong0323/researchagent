@@ -8,7 +8,7 @@ function sourceDocument(
 ): SourceDocument & { entityName?: string; entityType?: EntityType } {
   return {
     documentId: "doc:candidate",
-    canonicalUrl: "https://news.acme.test/acme-beauty-refill",
+    canonicalUrl: "https://news.acme.co.kr/acme-beauty-refill",
     documentType: "manual-url",
     title: "Acme Beauty opens a refill station pop-up",
     publishedAt: "2026-07-01T09:00:00+09:00",

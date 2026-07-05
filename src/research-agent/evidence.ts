@@ -51,6 +51,8 @@ const triggers = [
   "테스트"
 ];
 
+const sortedTriggers = [...triggers].sort((left, right) => right.length - left.length);
+
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
@@ -72,7 +74,14 @@ function includesEntity(sentence: string, entity: Entity): boolean {
 
 function findTrigger(sentence: string): string | undefined {
   const lowerSentence = sentence.toLowerCase();
-  return triggers.find((trigger) => lowerSentence.includes(trigger.toLowerCase()));
+  return sortedTriggers.find((trigger) => {
+    const lowerTrigger = trigger.toLowerCase();
+    if (/^[a-z ]+$/u.test(lowerTrigger)) {
+      return new RegExp(`(?<![a-z0-9])${escapeRegExp(lowerTrigger)}(?![a-z0-9])`, "iu").test(lowerSentence);
+    }
+
+    return lowerSentence.includes(lowerTrigger);
+  });
 }
 
 function escapeRegExp(value: string): string {

@@ -1,4 +1,5 @@
 import type { ScoutCandidate } from "./types.ts";
+import { buildTelegramCallbackData, registerTelegramCallbackCandidateIds } from "./telegram-callback.ts";
 
 const TELEGRAM_API_BASE_URL = "https://api.telegram.org";
 const TOP_CANDIDATE_LIMIT = 5;
@@ -134,11 +135,11 @@ export function buildCandidateInlineKeyboard(candidate: ScoutCandidate): Telegra
     candidate.verificationStatus === "verified" && candidate.briefAllowed
       ? {
           text: "Make Writing Brief",
-          callback_data: `brief:create:${candidate.candidateId}`
+          callback_data: buildTelegramCallbackData("brief:create", candidate.candidateId)
         }
       : {
           text: "Make Research Task",
-          callback_data: `research-task:create:${candidate.candidateId}`
+          callback_data: buildTelegramCallbackData("research-task:create", candidate.candidateId)
         };
 
   return {
@@ -150,19 +151,19 @@ function buildCandidateStatusButtonRow(candidate: ScoutCandidate): TelegramInlin
   return [
     {
       text: "Selected",
-      callback_data: `status:selected:${candidate.candidateId}`
+      callback_data: buildTelegramCallbackData("selected", candidate.candidateId)
     },
     {
       text: "Shortlisted",
-      callback_data: `status:shortlisted:${candidate.candidateId}`
+      callback_data: buildTelegramCallbackData("shortlisted", candidate.candidateId)
     },
     {
       text: "Rejected",
-      callback_data: `status:rejected:${candidate.candidateId}`
+      callback_data: buildTelegramCallbackData("rejected", candidate.candidateId)
     },
     {
       text: "Needs Research",
-      callback_data: `status:needs-research:${candidate.candidateId}`
+      callback_data: buildTelegramCallbackData("needs-research", candidate.candidateId)
     }
   ];
 }
@@ -187,5 +188,6 @@ export async function sendTelegramDailySummary(candidates: ScoutCandidate[]): Pr
     return false;
   }
 
+  await registerTelegramCallbackCandidateIds(candidates.map((candidate) => candidate.candidateId));
   return sendTelegramMessage(renderTelegramDailySummary(candidates), buildDailySummaryInlineKeyboard(candidates), config);
 }

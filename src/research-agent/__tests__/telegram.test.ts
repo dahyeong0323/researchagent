@@ -1,6 +1,10 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseTelegramCallbackData } from "../telegram-poll.ts";
 import { buildCandidateInlineKeyboard, renderTelegramDailySummary } from "../telegram.ts";
+import { registerTelegramCallbackCandidateIds, TELEGRAM_CALLBACK_DATA_MAX_BYTES } from "../telegram-callback.ts";
 import type { ScoutCandidate } from "../types.ts";
 
 function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
@@ -109,7 +113,7 @@ describe("Telegram daily notification", () => {
     );
 
     expect(keyboard.inline_keyboard[1]).toEqual([
-      { text: "Make Writing Brief", callback_data: "brief:create:sample-verified" }
+      { text: "Make Writing Brief", callback_data: "b:i:sample-verified" }
     ]);
   });
 
@@ -117,7 +121,7 @@ describe("Telegram daily notification", () => {
     const keyboard = buildCandidateInlineKeyboard(candidate({ id: "sample-needs-research" }));
 
     expect(keyboard.inline_keyboard[1]).toEqual([
-      { text: "Make Research Task", callback_data: "research-task:create:sample-needs-research" }
+      { text: "Make Research Task", callback_data: "t:i:sample-needs-research" }
     ]);
   });
 
@@ -132,10 +136,10 @@ describe("Telegram daily notification", () => {
 
     expect(keyboard.inline_keyboard.flat()).not.toContainEqual({
       text: "Make Writing Brief",
-      callback_data: "brief:create:sample-rejected"
+      callback_data: "b:i:sample-rejected"
     });
     expect(keyboard.inline_keyboard[1]).toEqual([
-      { text: "Make Research Task", callback_data: "research-task:create:sample-rejected" }
+      { text: "Make Research Task", callback_data: "t:i:sample-rejected" }
     ]);
   });
 
@@ -143,36 +147,97 @@ describe("Telegram daily notification", () => {
     const keyboard = buildCandidateInlineKeyboard(candidate({ id: "sample-003" }));
 
     expect(keyboard.inline_keyboard[0]).toEqual([
-      { text: "Selected", callback_data: "status:selected:sample-003" },
-      { text: "Shortlisted", callback_data: "status:shortlisted:sample-003" },
-      { text: "Rejected", callback_data: "status:rejected:sample-003" },
-      { text: "Needs Research", callback_data: "status:needs-research:sample-003" }
+      { text: "Selected", callback_data: "s:s:i:sample-003" },
+      { text: "Shortlisted", callback_data: "s:h:i:sample-003" },
+      { text: "Rejected", callback_data: "s:r:i:sample-003" },
+      { text: "Needs Research", callback_data: "s:n:i:sample-003" }
     ]);
   });
 
   it("parses status, task, and brief callback data", () => {
-    expect(parseTelegramCallbackData("status:selected:sample-003")).toEqual({
+    expect(parseTelegramCallbackData("s:s:i:sample-003")).toEqual({
       action: "selected",
       candidateId: "sample-003",
       status: "Selected"
     });
-    expect(parseTelegramCallbackData("status:needs-research:sample-003")).toEqual({
+    expect(parseTelegramCallbackData("s:n:i:sample-003")).toEqual({
       action: "needs-research",
       candidateId: "sample-003",
       status: "Needs Research"
     });
-    expect(parseTelegramCallbackData("research-task:create:sample-003")).toEqual({
+    expect(parseTelegramCallbackData("t:i:sample-003")).toEqual({
       action: "research-task:create",
       candidateId: "sample-003"
     });
-    expect(parseTelegramCallbackData("task:create:sample-003")).toEqual({
-      action: "research-task:create",
-      candidateId: "sample-003"
-    });
-    expect(parseTelegramCallbackData("brief:create:sample-003")).toEqual({
+    expect(parseTelegramCallbackData("b:i:sample-003")).toEqual({
       action: "brief:create",
       candidateId: "sample-003"
     });
     expect(parseTelegramCallbackData("ignored:sample-003")).toBeUndefined();
+  });
+
+  it("parses legacy callback data with colon-containing candidate IDs", () => {
+    const candidateId = "candidate:manual-url:https://brand.example/news:entity:brand";
+
+    expect(parseTelegramCallbackData(`status:selected:${candidateId}`)).toEqual({
+      action: "selected",
+      candidateId,
+      status: "Selected"
+    });
+    expect(parseTelegramCallbackData(`research-task:create:${candidateId}`)).toEqual({
+      action: "research-task:create",
+      candidateId
+    });
+    expect(parseTelegramCallbackData(`task:create:${candidateId}`)).toEqual({
+      action: "research-task:create",
+      candidateId
+    });
+    expect(parseTelegramCallbackData(`brief:create:${candidateId}`)).toEqual({
+      action: "brief:create",
+      candidateId
+    });
+    expect(parseTelegramCallbackData(`brief:${candidateId}`)).toEqual({
+      action: "brief:create",
+      candidateId
+    });
+  });
+
+  it("keeps generated callback data within Telegram's 64 byte limit", async () => {
+    const longCandidateId = `candidate:${"manual-url:".repeat(10)}https://example.co.kr/path:entity:acme-beauty`;
+    const keyboard = buildCandidateInlineKeyboard(
+      candidate({
+        id: longCandidateId,
+        candidateId: longCandidateId,
+        entityName: "ACME Beauty",
+        entityType: "brand",
+        observedFeature: "flagship refill counter",
+        evidenceType: "article",
+        verificationStatus: "verified",
+        briefAllowed: true
+      })
+    );
+
+    for (const button of keyboard.inline_keyboard.flat()) {
+      expect(Buffer.byteLength(button.callback_data, "utf8")).toBeLessThanOrEqual(
+        TELEGRAM_CALLBACK_DATA_MAX_BYTES
+      );
+    }
+
+    const tempDir = await mkdtemp(join(tmpdir(), "telegram-callbacks-"));
+    const registryPath = join(tempDir, "callbacks.json");
+    try {
+      await registerTelegramCallbackCandidateIds([longCandidateId], registryPath, new Date("2026-07-04T00:00:00Z"));
+      expect(parseTelegramCallbackData(keyboard.inline_keyboard[0][0].callback_data, { registryPath })).toEqual({
+        action: "selected",
+        candidateId: longCandidateId,
+        status: "Selected"
+      });
+      expect(parseTelegramCallbackData(keyboard.inline_keyboard[1][0].callback_data, { registryPath })).toEqual({
+        action: "brief:create",
+        candidateId: longCandidateId
+      });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 });

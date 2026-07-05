@@ -1,12 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { extractEntitiesFromDocument } from "../entity.ts";
 import { collectManualUrl, parseHtmlDocument } from "../sources/index.ts";
 
-function fetchHtml(html: string) {
+function fetchHtml(html: string, finalUrl?: string) {
   return async () => ({
     ok: true,
     status: 200,
+    url: finalUrl,
     headers: {
       get(name: string) {
         return name.toLowerCase() === "content-type" ? "text/html; charset=utf-8" : null;
@@ -63,8 +65,10 @@ describe("manual URL collector", () => {
     expect(result.sourceDocument.fetchStatus).toBe("success");
     expect(result.sourceDocument.contentText).toContain("refill station pop-up");
     expect(result.sourceDocument.paragraphs.length).toBeGreaterThanOrEqual(2);
+    expect(result.sourceDocument.rawHtml).toContain("<html");
     expect(result.rawSourceItem.fetchStatus).toBe("success");
     expect(result.rawSourceItem.parseStatus).toBe("success");
+    expect(result.rawSourceItem.rawHtml).toContain("<html");
   });
 
   it("falls back to readable body text when article tags are absent", async () => {
@@ -89,6 +93,58 @@ describe("manual URL collector", () => {
     expect(result.sourceDocument.canonicalUrl).toBe("https://news.example.org/body-only");
     expect(result.sourceDocument.description).toBe("Body fallback description");
     expect(result.sourceDocument.contentText).toContain("introduced a refill station pilot");
+    expect(result.sourceDocument.paragraphs).toHaveLength(1);
+    expect(result.sourceDocument.paragraphs[0]?.text).toContain("introduced a refill station pilot");
+  });
+
+  it("preserves raw HTML so JSON-LD entity extraction works", async () => {
+    const html = [
+      "<html>",
+      "<head>",
+      "<script type=\"application/ld+json\">",
+      "{\"@type\":\"Organization\",\"name\":\"Acme Beauty\"}",
+      "</script>",
+      "<title>Retail refill pilot</title>",
+      "</head>",
+      "<body><main><div>Acme launched a refill station pilot for lower-waste shopping.</div></main></body>",
+      "</html>"
+    ].join("");
+
+    const result = await collectManualUrl("https://news.example.org/jsonld", {
+      fetchImpl: fetchHtml(html),
+      now: new Date("2026-07-04T00:00:00.000Z")
+    });
+
+    expect(extractEntitiesFromDocument(result.sourceDocument)[0]).toMatchObject({
+      displayName: "Acme Beauty",
+      resolutionMethod: "jsonld"
+    });
+  });
+
+  it("rejects unsafe redirected final URLs", async () => {
+    await expect(
+      collectManualUrl("https://news.example.org/redirect", {
+        fetchImpl: fetchHtml("<html><body><p>This should not be accepted.</p></body></html>", "https://www.linkedin.com/posts/example")
+      })
+    ).rejects.toThrow("LinkedIn URLs are not allowed");
+  });
+
+  it("rejects unsafe canonical URLs", async () => {
+    const html = [
+      "<html>",
+      "<head>",
+      "<link rel=\"canonical\" href=\"https://www.linkedin.com/posts/example\">",
+      "<title>Unsafe canonical</title>",
+      "</head>",
+      "<body><p>Acme Beauty launched a refill station pop-up in Seoul.</p></body>",
+      "</html>"
+    ].join("");
+
+    await expect(
+      collectManualUrl("https://news.example.org/canonical", {
+        fetchImpl: fetchHtml(html)
+      })
+    ).rejects.toThrow("LinkedIn URLs are not allowed");
   });
 
   it("rejects LinkedIn URLs", async () => {

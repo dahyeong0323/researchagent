@@ -4,7 +4,7 @@ import { candidatesFromDocumentOrFallback } from "../source-candidates.ts";
 import { processRawCandidates } from "../scout.ts";
 import type { RawSourceItem, ScoutCandidate, SourceDocument } from "../types.ts";
 import { collectManualUrl } from "./manual-url.ts";
-import { checksum, normalizeWhitespace } from "./source-utils.ts";
+import { checksum, isSafeManualUrl, normalizeWhitespace } from "./source-utils.ts";
 import type { FeedConfig } from "./feed-config.ts";
 
 type FetchLike = (url: string, init?: { signal?: AbortSignal; headers?: Record<string, string> }) => Promise<{
@@ -107,6 +107,10 @@ function hasLikelyEntity(text: string): boolean {
     return true;
   }
 
+  if (/\b[A-Z][A-Za-z0-9&'.-]{2,}\b/u.test(text) && businessSignalPattern.test(text)) {
+    return true;
+  }
+
   return /[가-힣A-Za-z0-9]+(?:랩스|스토어|페이|뱅크|뷰티|커머스|마켓|브랜드|앱|AI)/u.test(text);
 }
 
@@ -152,6 +156,19 @@ function uniqueEntries(entries: ParsedEntry[]): ParsedEntry[] {
   return kept;
 }
 
+function safeEntries(entries: ParsedEntry[]): ParsedEntry[] {
+  return entries.filter((entry) => isSafeManualUrl(entry.link));
+}
+
+function isoDateOrUndefined(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
 async function fetchFeed(feed: FeedConfig, options: CollectRssOptions): Promise<string> {
   if (!/^https?:\/\//iu.test(feed.feedUrl)) {
     return readFile(resolve(feed.feedUrl), "utf8");
@@ -173,7 +190,7 @@ async function fetchFeed(feed: FeedConfig, options: CollectRssOptions): Promise<
 }
 
 function rawItemFromEntry(entry: ParsedEntry, feed: FeedConfig, collectedAt: string): RawSourceItem {
-  const sourcePublishedAt = entry.publishedAt ? new Date(entry.publishedAt).toISOString() : undefined;
+  const sourcePublishedAt = isoDateOrUndefined(entry.publishedAt);
   const id = entry.guid ?? checksum(`${feed.feedUrl}:${entry.link}:${entry.title}`);
 
   return {
@@ -205,7 +222,7 @@ export async function collectRssFeeds(
 
   for (const feed of configs) {
     const xml = await fetchFeed(feed, options);
-    const entries = uniqueEntries(parseFeedEntries(xml).filter(isQualityEntry));
+    const entries = safeEntries(uniqueEntries(parseFeedEntries(xml).filter(isQualityEntry)));
     items.push(...entries.map((entry) => rawItemFromEntry(entry, feed, collectedAt)));
   }
 
@@ -249,7 +266,7 @@ export async function collectRssFeedsWithDocuments(
     let entries: ParsedEntry[];
     try {
       const xml = await fetchFeed(feed, options);
-      entries = uniqueEntries(parseFeedEntries(xml).filter(isQualityEntry));
+      entries = safeEntries(uniqueEntries(parseFeedEntries(xml).filter(isQualityEntry)));
     } catch (error) {
       errors.push(`rss:${feed.feedName}: ${error instanceof Error ? error.message : String(error)}`);
       continue;

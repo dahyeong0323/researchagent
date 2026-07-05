@@ -84,16 +84,20 @@ function inferEntityType(displayName: string, document: SourceDocument): EntityT
   const name = normalizedKey(displayName);
   const context = contextFor(document);
 
-  if (/\b(app|ios|android|mobile app|software|saas)\b/u.test(context)) {
+  if (["headspace", "calm", "duolingo"].includes(name)) {
     return "app";
   }
 
-  if (/\b(service|platform|subscription|membership)\b/u.test(context)) {
-    return "service";
+  if (["olive better", "daiso", "다이소"].includes(name)) {
+    return "brand";
   }
 
-  if (/\b(store|shop|retail|pop-?up|offline|flagship)\b/u.test(context) || /매장|팝업|스토어/u.test(context)) {
-    return "brand";
+  if (/\b(inc|inc\.|corp|corp\.|ltd|llc|holdings|labs)\b/u.test(name)) {
+    return "company";
+  }
+
+  if (/\b(founder|ceo|creator|artist|investor)\b/u.test(context)) {
+    return "person";
   }
 
   if (/\b(brand|beauty|fashion|fnb|restaurant|cafe)\b/u.test(context) || /브랜드|뷰티/u.test(context)) {
@@ -104,15 +108,15 @@ function inferEntityType(displayName: string, document: SourceDocument): EntityT
     return "company";
   }
 
-  if (/\b(founder|ceo|creator|artist|investor)\b/u.test(context)) {
-    return "person";
-  }
-
-  if (["headspace", "calm", "duolingo"].includes(name)) {
+  if (/\b(app|ios|android|mobile app|software|saas)\b/u.test(context)) {
     return "app";
   }
 
-  if (["olive better", "daiso", "다이소"].includes(name)) {
+  if (/\b(service|platform|subscription|membership)\b/u.test(context)) {
+    return "service";
+  }
+
+  if (/\b(store|shop|retail|pop-?up|offline|flagship)\b/u.test(context) || /매장|팝업|스토어/u.test(context)) {
     return "brand";
   }
 
@@ -183,7 +187,7 @@ function parseJsonSafely(value: string): unknown | undefined {
 }
 
 function jsonLdBlocks(document: SourceDocument): unknown[] {
-  const source = `${document.contentMarkdown ?? ""}\n${document.contentText}`;
+  const source = `${document.rawHtml ?? ""}\n${document.contentMarkdown ?? ""}\n${document.contentText}`;
   const blocks: unknown[] = [];
   const scriptPattern = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/giu;
   let match: RegExpExecArray | null;
@@ -284,7 +288,7 @@ function extractRepeatedBodyEntities(document: SourceDocument): Entity[] {
     .map(([key, count]) => {
       const displayName = displayByKey.get(key) ?? key;
       const sourceParagraphIds = document.paragraphs
-        .filter((paragraph) => normalizedKey(paragraph.text).includes(key))
+        .filter((paragraph) => new RegExp(`(?<![a-z0-9])${escapeRegExp(key)}(?![a-z0-9])`, "iu").test(normalizedKey(paragraph.text)))
         .map((paragraph) => paragraph.id);
       return createEntity(
         displayName,
@@ -296,6 +300,10 @@ function extractRepeatedBodyEntities(document: SourceDocument): Entity[] {
       );
     })
     .filter((entity): entity is Entity => Boolean(entity));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export function extractEntitiesFromDocument(document: SourceDocument): Entity[] {

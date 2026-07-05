@@ -29,6 +29,15 @@ export function assertSafeManualUrl(value: string): URL {
   return url;
 }
 
+export function isSafeManualUrl(value: string): boolean {
+  try {
+    assertSafeManualUrl(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function looksLoginOrPaywalled(html: string): boolean {
   const lower = html.toLowerCase();
   return [

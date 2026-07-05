@@ -5,6 +5,9 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   research-agent:
     runs-on: ubuntu-latest
@@ -19,9 +22,3 @@ jobs:
       - run: npm run daily:dry
         env:
           RESEARCH_AGENT_FEEDS_PATH: data/research-agent/feeds.sample.json
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: research-agent-runs
-          path: data/research-agent/runs/*.json
-          if-no-files-found: ignore

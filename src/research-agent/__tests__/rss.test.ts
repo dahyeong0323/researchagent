@@ -4,7 +4,7 @@ import type { FeedConfig } from "../sources/feed-config.ts";
 
 const feed: FeedConfig = {
   feedName: "Example Retail Feed",
-  feedUrl: "https://news.acme.test/rss.xml",
+  feedUrl: "https://news.acme.co.kr/rss.xml",
   sourceCategory: "retail_brand",
   language: "en",
   country: "GLOBAL",
@@ -17,14 +17,14 @@ const rssXml = `<?xml version="1.0" encoding="UTF-8"?>
     <item>
       <guid>acme-1</guid>
       <title>Acme Beauty launches refill station pop-up</title>
-      <link>https://news.acme.test/acme-refill</link>
+      <link>https://news.acme.co.kr/acme-refill</link>
       <pubDate>Wed, 01 Jul 2026 09:00:00 GMT</pubDate>
       <description>Acme Beauty launched a refill station pop-up in Seoul.</description>
     </item>
     <item>
       <guid>macro-1</guid>
       <title>Global economy outlook shifts consumer sentiment</title>
-      <link>https://news.acme.test/macro</link>
+      <link>https://news.acme.co.kr/macro</link>
       <description>A generic macro trend article about interest rates.</description>
     </item>
   </channel>
@@ -86,7 +86,7 @@ describe("RSS enrichment", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       title: "Acme Beauty launches refill station pop-up",
-      sourceUrl: "https://news.acme.test/acme-refill",
+      sourceUrl: "https://news.acme.co.kr/acme-refill",
       rawSummary: "Acme Beauty launched a refill station pop-up in Seoul."
     });
   });
@@ -106,7 +106,7 @@ describe("RSS enrichment", () => {
     const result = await collectRssFeedsWithDocuments([feed], {
       fetchImpl: fetchByUrl({
         [feed.feedUrl]: rssXml,
-        "https://news.acme.test/acme-refill": articleHtml
+        "https://news.acme.co.kr/acme-refill": articleHtml
       }),
       now: new Date("2026-07-04T00:00:00.000Z")
     });
@@ -124,7 +124,7 @@ describe("RSS enrichment", () => {
     const result = await collectRssFeedsWithDocuments([feed], {
       fetchImpl: fetchByUrl({
         [feed.feedUrl]: rssXml,
-        "https://news.acme.test/acme-refill": articleHtml
+        "https://news.acme.co.kr/acme-refill": articleHtml
       }),
       now: new Date("2026-07-04T00:00:00.000Z")
     });
@@ -140,7 +140,7 @@ describe("RSS enrichment", () => {
     const result = await collectRssFeedsWithDocuments([feed], {
       fetchImpl: fetchByUrl({
         [feed.feedUrl]: rssXml,
-        "https://news.acme.test/acme-refill": new Error("article unavailable")
+        "https://news.acme.co.kr/acme-refill": new Error("article unavailable")
       }),
       now: new Date("2026-07-04T00:00:00.000Z")
     });

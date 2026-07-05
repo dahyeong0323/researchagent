@@ -63,6 +63,22 @@ describe("entity extraction", () => {
     });
   });
 
+  it("does not type a company as an app only because it launches an app", () => {
+    const document = documentWith({
+      title: "Acme Labs launches a shopping companion app",
+      description: "The company launched a mobile app for beauty shoppers.",
+      contentText: "Acme Labs said the app is part of the company's retail strategy."
+    });
+
+    const entities = extractEntitiesFromDocument(document);
+
+    expect(entities[0]).toMatchObject({
+      displayName: "Acme Labs",
+      entityType: "company",
+      resolutionMethod: "title"
+    });
+  });
+
   it("extracts Olive Better as a brand from retail context", () => {
     const document = documentWith({
       title: "Olive Better opens a Seongsu store",

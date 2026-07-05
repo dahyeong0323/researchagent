@@ -137,6 +137,14 @@ function workflowStatus(candidate: ScoutCandidate): string {
   return statusName(candidate.status);
 }
 
+function primaryStatus(candidate: ScoutCandidate): string {
+  if (candidate.verificationStatus === "rejected") {
+    return "Rejected";
+  }
+
+  return statusName(candidate.status);
+}
+
 function workflowNextAction(candidate: ScoutCandidate): string {
   if (candidate.verificationStatus === "verified" && candidate.briefAllowed) {
     return "Make Writing Brief";
@@ -281,7 +289,7 @@ export function buildCandidatePagePayload(candidate: ScoutCandidate, parent: Not
       "Candidate ID": richText(candidate.id),
       "소재명": title(candidate.topicName),
       "발견 날짜": date(candidate.discoveredDate),
-      "상태": select(workflowStatus(candidate)),
+      "상태": select(primaryStatus(candidate)),
       "피드백 라벨": multiSelect(candidate.feedbackLabels),
       "점수": number(candidate.score),
       "카테고리": select(candidate.category),
@@ -599,6 +607,15 @@ function selectProperty(property: unknown): string | undefined {
     : undefined;
 }
 
+function checkboxProperty(property: unknown): boolean | undefined {
+  if (!property || typeof property !== "object" || !("checkbox" in property)) {
+    return undefined;
+  }
+
+  const value = (property as { checkbox: unknown }).checkbox;
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function multiSelectProperty(property: unknown): string[] {
   if (!property || typeof property !== "object" || !("multi_select" in property)) {
     return [];
@@ -614,6 +631,49 @@ function multiSelectProperty(property: unknown): string[] {
       value && typeof value === "object" && "name" in value ? String((value as { name: unknown }).name) : ""
     )
     .filter(Boolean);
+}
+
+type NotionPatchProperty = ReturnType<typeof select> | ReturnType<typeof checkbox>;
+type NotionPatchProperties = Record<string, NotionPatchProperty>;
+
+function isExistingBriefReady(properties: Record<string, unknown>): boolean {
+  return selectProperty(properties["검증 상태"]) === "verified" && checkboxProperty(properties["Brief Allowed"]) === true;
+}
+
+export function buildNotionStatusUpdateProperties(
+  status: NotionStatusUpdateResult["status"],
+  existingProperties: Record<string, unknown> = {}
+): NotionPatchProperties {
+  if (status === "Rejected") {
+    return {
+      "상태": select("Rejected"),
+      "Workflow Status": select("Rejected"),
+      "Brief Allowed": checkbox(false),
+      "Writing Brief Status": select("blocked"),
+      "Research Task Status": select("none"),
+      "Next Action": select("Reject")
+    };
+  }
+
+  if (status === "Needs Research") {
+    return {
+      "Workflow Status": select("Needs Research"),
+      "Brief Allowed": checkbox(false),
+      "Writing Brief Status": select("not-ready"),
+      "Research Task Status": select("open"),
+      "Next Action": select("Make Research Task")
+    };
+  }
+
+  const briefReady = isExistingBriefReady(existingProperties);
+  return {
+    "상태": select(status),
+    "Workflow Status": select(status),
+    "Brief Allowed": checkbox(briefReady),
+    "Writing Brief Status": select(briefReady ? "ready" : "not-ready"),
+    "Research Task Status": select(briefReady ? "none" : "open"),
+    "Next Action": select(briefReady ? "Make Writing Brief" : "Make Research Task")
+  };
 }
 
 function dateProperty(property: unknown): string | undefined {
@@ -637,7 +697,8 @@ function statusForFeedback(value?: string): CandidateFeedbackRecord["status"] | 
 async function updateNotionPageStatus(
   pageIdValue: string,
   status: NotionStatusUpdateResult["status"],
-  config: NotionConfig
+  config: NotionConfig,
+  existingProperties: Record<string, unknown>
 ): Promise<void> {
   validateNotionReadConfig(config);
 
@@ -649,9 +710,7 @@ async function updateNotionPageStatus(
       "Notion-Version": config.notionVersion
     },
     body: JSON.stringify({
-      properties: {
-        "상태": select(status)
-      }
+      properties: buildNotionStatusUpdateProperties(status, existingProperties)
     })
   });
 
@@ -692,8 +751,8 @@ export async function updateCandidateStatusByCandidateId(
       };
     }
 
-    await updateNotionPageStatus(targetPageId, status, config);
     const properties = pageProperties(page);
+    await updateNotionPageStatus(targetPageId, status, config, properties);
 
     return {
       candidateId,

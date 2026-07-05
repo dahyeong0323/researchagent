@@ -7,7 +7,14 @@ import type {
   VerificationStatus
 } from "./types.ts";
 
-const PLACEHOLDER_HOSTS = new Set(["example.com", "www.example.com"]);
+const PLACEHOLDER_HOSTS = new Set([
+  "example.com",
+  "www.example.com",
+  "example.org",
+  "www.example.org",
+  "example.net",
+  "www.example.net"
+]);
 const LINKEDIN_HOSTS = new Set(["linkedin.com", "www.linkedin.com"]);
 
 const genericEntityNames = new Set([
@@ -41,7 +48,10 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-type VerificationInput = Partial<ScoutCandidate> & Pick<Partial<RawSourceItem>, "title" | "rawSummary">;
+type VerificationInput = Partial<ScoutCandidate> &
+  Pick<Partial<RawSourceItem>, "title" | "rawSummary" | "rawText" | "rawHtml" | "collectorType"> & {
+    contentText?: string;
+  };
 
 function normalizeText(value: string | undefined): string {
   return value?.trim().replace(/\s+/g, " ") ?? "";
@@ -75,7 +85,15 @@ function hasUsableSourceUrl(sourceUrl: string | undefined): boolean {
   }
 
   const host = hostnameFor(sourceUrl);
-  return Boolean(host) && !PLACEHOLDER_HOSTS.has(host) && !host.endsWith(".example.com");
+  return (
+    Boolean(host) &&
+    !PLACEHOLDER_HOSTS.has(host) &&
+    !host.endsWith(".example.com") &&
+    !host.endsWith(".example.org") &&
+    !host.endsWith(".example.net") &&
+    host !== "test" &&
+    !host.endsWith(".test")
+  );
 }
 
 function isLinkedInUrl(sourceUrl: string | undefined): boolean {
@@ -98,6 +116,8 @@ function isGenericText(value: string | undefined): boolean {
     normalized.includes("sample") ||
     normalized.includes("placeholder") ||
     normalized.includes("example.com") ||
+    normalized.includes("example.org") ||
+    normalized.includes("example.net") ||
     normalized === "test" ||
     normalized === "untitled" ||
     normalized === "example"
@@ -128,6 +148,46 @@ function evidenceParagraphIdsFor(item: Partial<RawSourceItem | ScoutCandidate>):
   return "evidenceParagraphIds" in item && Array.isArray(item.evidenceParagraphIds)
     ? item.evidenceParagraphIds
     : [];
+}
+
+function hasDocumentEvidenceParagraphs(item: VerificationInput, evidenceParagraphIds: string[]): boolean {
+  return evidenceParagraphIds.length > 0 && Array.isArray(item.originDocumentIds) && item.originDocumentIds.length > 0;
+}
+
+function evidenceTextSourcesFor(item: VerificationInput): string[] {
+  return [
+    item.rawText,
+    item.rawSummary,
+    item.rawHtml,
+    item.contentText
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function isEvidenceSnippetInSourceText(item: VerificationInput, evidenceSnippet: string | undefined): boolean {
+  if (!evidenceSnippet) {
+    return false;
+  }
+
+  const normalizedSnippet = normalizeText(evidenceSnippet).toLowerCase();
+  return evidenceTextSourcesFor(item).some((sourceText) =>
+    normalizeText(sourceText).toLowerCase().includes(normalizedSnippet)
+  );
+}
+
+function hasTrustedManualObservationProvenance(item: VerificationInput): boolean {
+  return item.collectorType === "manual-observation" && item.verificationStatus === "verified";
+}
+
+function hasSourceBackedEvidence(
+  item: VerificationInput,
+  evidenceSnippet: string | undefined,
+  evidenceParagraphIds: string[]
+): boolean {
+  return (
+    isEvidenceSnippetInSourceText(item, evidenceSnippet) ||
+    hasDocumentEvidenceParagraphs(item, evidenceParagraphIds) ||
+    hasTrustedManualObservationProvenance(item)
+  );
 }
 
 function isUnsupportedClaim(item: Partial<RawSourceItem | ScoutCandidate>): boolean {
@@ -213,25 +273,38 @@ function addGenericTextMissingFields(missing: string[], item: VerificationInput)
   return [...next];
 }
 
+function addEvidenceProvenanceMissingField(
+  missing: string[],
+  item: VerificationInput,
+  evidenceSnippet: string | undefined,
+  evidenceParagraphIds: string[]
+): string[] {
+  const next = new Set(missing);
+  const hasEvidenceReference = Boolean(evidenceSnippet) || evidenceParagraphIds.length > 0;
+
+  if (hasEvidenceReference && !hasSourceBackedEvidence(item, evidenceSnippet, evidenceParagraphIds)) {
+    next.add("source-backed evidence provenance");
+  }
+
+  return [...next];
+}
+
 function verificationNotesFor(
   status: VerificationStatus,
   missing: string[],
   rejectedReason: string | undefined,
   fallback?: string
 ): string {
-  if (fallback && fallback.trim().length > 0) {
-    return fallback.trim();
-  }
-
   if (status === "rejected") {
-    return rejectedReason ?? "Source does not support the candidate claim.";
+    return rejectedReason ?? fallback?.trim() ?? "Source does not support the candidate claim.";
   }
 
   if (status === "verified") {
     return "Verified source, entity, observed feature, and evidence are present.";
   }
 
-  return `Needs research before writing: ${missing.join(", ")}.`;
+  const missingNote = `Needs research before writing: ${missing.join(", ")}.`;
+  return fallback && fallback.trim().length > 0 ? `${missingNote} ${fallback.trim()}` : missingNote;
 }
 
 export function isBriefAllowed(result: VerificationResult): boolean {
@@ -254,17 +327,22 @@ export function verifyCandidate(candidate: VerificationInput): VerificationResul
   const evidenceParagraphIds = evidenceParagraphIdsFor(candidate);
   const evidenceType = candidate.evidenceType ?? "unknown";
   const sourceReliability = sourceReliabilityFor(candidate, evidenceType);
-  const missing = addGenericTextMissingFields(
-    needsVerificationFor(
-      candidate.sourceUrl,
-      entityName,
-      entityType,
-      observedFeature,
-      evidenceSnippet,
-      evidenceType,
-      evidenceParagraphIds
+  const missing = addEvidenceProvenanceMissingField(
+    addGenericTextMissingFields(
+      needsVerificationFor(
+        candidate.sourceUrl,
+        entityName,
+        entityType,
+        observedFeature,
+        evidenceSnippet,
+        evidenceType,
+        evidenceParagraphIds
+      ),
+      candidate
     ),
-    candidate
+    candidate,
+    evidenceSnippet,
+    evidenceParagraphIds
   );
 
   let verificationStatus: VerificationStatus = candidate.verificationStatus ?? "verified";
@@ -319,6 +397,9 @@ export function verifySourceItem(item: RawSourceItem): VerificationResult {
     sourceName: item.sourceName,
     sourcePublishedAt: item.sourcePublishedAt ?? item.publishedAt,
     rawSummary: item.rawSummary,
+    rawText: item.rawText,
+    rawHtml: item.rawHtml,
+    collectorType: item.collectorType,
     entityName: item.entityName,
     entityType: item.entityType ?? "unknown",
     observedFeature: item.observedFeature,
@@ -326,7 +407,7 @@ export function verifySourceItem(item: RawSourceItem): VerificationResult {
     evidenceType: item.evidenceType,
     verificationStatus: item.verificationStatus,
     verificationNotes: item.verificationNotes,
-    sourceReliability: undefined,
+    sourceReliability: item.sourceReliability,
     evidenceParagraphIds: []
   });
 }

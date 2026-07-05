@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildCandidatePagePayload,
+  buildNotionStatusUpdateProperties,
   buildResearchTaskNotionProperties,
+  updateCandidateStatusByCandidateId,
   validateCandidatePagePayload
 } from "../notion.ts";
 import type { ResearchTask, ScoutCandidate } from "../types.ts";
@@ -52,6 +54,10 @@ const candidate: ScoutCandidate = {
 };
 
 describe("Notion payload mapping", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("includes Candidate ID as a required rich text property", () => {
     const payload = buildCandidatePagePayload(candidate, {
       database_id: "test-database-id"
@@ -110,6 +116,23 @@ describe("Notion payload mapping", () => {
     expect(payload.properties["Brief Allowed"]).toEqual({ checkbox: false });
     expect(payload.properties["Research Task Status"]).toEqual({ select: { name: "open" } });
     expect(payload.properties["Next Action"]).toEqual({ select: { name: "Make Research Task" } });
+  });
+
+  it("does not write Needs Research into the primary status select", () => {
+    const payload = buildCandidatePagePayload(
+      {
+        ...candidate,
+        verificationStatus: "needs-research",
+        briefAllowed: false,
+        verificationNotes: "Evidence is missing."
+      },
+      {
+        database_id: "test-database-id"
+      }
+    );
+
+    expect(payload.properties["상태"]).toEqual({ select: { name: "New" } });
+    expect(payload.properties["Workflow Status"]).toEqual({ select: { name: "Needs Research" } });
   });
 
   it("maps rejected candidates to rejected workflow properties", () => {
@@ -176,6 +199,85 @@ describe("Notion payload mapping", () => {
       "Research Task Status": { select: { name: "open" } },
       "Brief Allowed": { checkbox: false },
       "Next Action": { select: { name: "Make Research Task" } }
+    });
+  });
+
+  it("builds synchronized status update properties for selected ready candidates", () => {
+    expect(
+      buildNotionStatusUpdateProperties("Selected", {
+        "검증 상태": { select: { name: "verified" } },
+        "Brief Allowed": { checkbox: true }
+      })
+    ).toEqual({
+      "상태": { select: { name: "Selected" } },
+      "Workflow Status": { select: { name: "Selected" } },
+      "Brief Allowed": { checkbox: true },
+      "Writing Brief Status": { select: { name: "ready" } },
+      "Research Task Status": { select: { name: "none" } },
+      "Next Action": { select: { name: "Make Writing Brief" } }
+    });
+  });
+
+  it("builds workflow-only Needs Research status update properties", () => {
+    expect(buildNotionStatusUpdateProperties("Needs Research")).toEqual({
+      "Workflow Status": { select: { name: "Needs Research" } },
+      "Brief Allowed": { checkbox: false },
+      "Writing Brief Status": { select: { name: "not-ready" } },
+      "Research Task Status": { select: { name: "open" } },
+      "Next Action": { select: { name: "Make Research Task" } }
+    });
+  });
+
+  it("patches status together with workflow readiness fields", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: "notion-page-1",
+                properties: {
+                  "소재명": {
+                    title: [{ plain_text: "테스트 리테일 후보" }]
+                  },
+                  "검증 상태": {
+                    select: { name: "verified" }
+                  },
+                  "Brief Allowed": {
+                    checkbox: true
+                  }
+                }
+              }
+            ]
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "notion-page-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+
+    const result = await updateCandidateStatusByCandidateId("candidate-telegram-1", "Selected", {
+      apiKey: "test-key",
+      parent: { database_id: "test-database-id" },
+      notionVersion: "2022-06-28",
+      dryRun: false
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const patchBody = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body)) as { properties: unknown };
+    expect(patchBody.properties).toEqual({
+      "상태": { select: { name: "Selected" } },
+      "Workflow Status": { select: { name: "Selected" } },
+      "Brief Allowed": { checkbox: true },
+      "Writing Brief Status": { select: { name: "ready" } },
+      "Research Task Status": { select: { name: "none" } },
+      "Next Action": { select: { name: "Make Writing Brief" } }
     });
   });
 });

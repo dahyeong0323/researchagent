@@ -6,6 +6,7 @@ type FetchResponseLike = {
   ok: boolean;
   status: number;
   statusText?: string;
+  url?: string;
   headers?: {
     get(name: string): string | null;
   };
@@ -27,7 +28,11 @@ export type ManualUrlCollectOptions = {
 
 const DEFAULT_TIMEOUT_MS = Number.parseInt(process.env.MANUAL_URL_FETCH_TIMEOUT_MS ?? "10000", 10);
 
-async function fetchHtml(url: string, fetchImpl: FetchLike, timeoutMs: number): Promise<string> {
+async function fetchHtml(
+  url: string,
+  fetchImpl: FetchLike,
+  timeoutMs: number
+): Promise<{ html: string; finalUrl: string }> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -43,6 +48,7 @@ async function fetchHtml(url: string, fetchImpl: FetchLike, timeoutMs: number): 
       throw new Error(`Manual URL fetch failed with ${response.status}${response.statusText ? ` ${response.statusText}` : ""}.`);
     }
 
+    const finalUrl = response.url ? assertSafeManualUrl(response.url).toString() : url;
     const contentType = response.headers?.get("content-type")?.toLowerCase();
     if (contentType && !contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
       throw new Error(`Manual URL collector expected HTML but received ${contentType}.`);
@@ -57,7 +63,7 @@ async function fetchHtml(url: string, fetchImpl: FetchLike, timeoutMs: number): 
       throw new Error("Manual URL appears to require login, subscription, or paywall access.");
     }
 
-    return html;
+    return { html, finalUrl };
   } finally {
     clearTimeout(timeout);
   }
@@ -70,9 +76,10 @@ export async function collectManualUrl(
   const url = assertSafeManualUrl(value);
   const fetchImpl = options.fetchImpl ?? fetch;
   const fetchedAt = (options.now ?? new Date()).toISOString();
-  const html = await fetchHtml(url.toString(), fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  const parsed = parseHtmlDocument(html, url.toString());
-  const documentId = `manual-url:${checksum(parsed.canonicalUrl).slice(0, 16)}`;
+  const fetched = await fetchHtml(url.toString(), fetchImpl, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const parsed = parseHtmlDocument(fetched.html, fetched.finalUrl);
+  const canonicalUrl = assertSafeManualUrl(parsed.canonicalUrl).toString();
+  const documentId = `manual-url:${checksum(canonicalUrl).slice(0, 16)}`;
 
   const sourceDocument: SourceDocument = {
     id: documentId,
@@ -80,7 +87,7 @@ export async function collectManualUrl(
     sourceItemId: documentId,
     collectorType: "manual-url",
     sourceUrl: url.toString(),
-    canonicalUrl: parsed.canonicalUrl,
+    canonicalUrl,
     documentType: "manual-url",
     title: parsed.title,
     description: parsed.description,
@@ -88,6 +95,7 @@ export async function collectManualUrl(
     siteName: parsed.siteName,
     siteType: "public-web",
     contentText: parsed.contentText,
+    rawHtml: fetched.html,
     paragraphs: parsed.paragraphs,
     sourceCategory: "manual",
     collectedAt: fetchedAt,
@@ -95,7 +103,7 @@ export async function collectManualUrl(
     country: "UNKNOWN",
     reliabilityTier: 3,
     fetchStatus: "success",
-    fetchChecksum: checksum(html),
+    fetchChecksum: checksum(fetched.html),
     fetchedAt
   };
 
@@ -103,7 +111,7 @@ export async function collectManualUrl(
     id: documentId,
     collectorType: "manual-url",
     title: parsed.title,
-    sourceUrl: parsed.canonicalUrl,
+    sourceUrl: canonicalUrl,
     sourceName: parsed.siteName,
     sourceCategory: "manual",
     sourcePublishedAt: parsed.publishedAt,
@@ -112,7 +120,8 @@ export async function collectManualUrl(
     language: "UNKNOWN",
     rawSummary: parsed.contentText.slice(0, 500),
     rawText: parsed.contentText,
-    canonicalUrl: parsed.canonicalUrl,
+    rawHtml: fetched.html,
+    canonicalUrl,
     fetchStatus: "success",
     parseStatus: "success",
     evidenceType: "article",

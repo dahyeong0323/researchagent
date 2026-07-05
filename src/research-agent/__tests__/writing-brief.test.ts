@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -8,7 +8,10 @@ import {
   inferGenericThesisToAvoid,
   renderWritingBrief,
   toWritingBrief,
-  writeWritingBriefForCandidate
+  toWritingBriefWithLlm,
+  writeResearchTaskForCandidateId,
+  writeWritingBriefForCandidate,
+  writeWritingBriefForCandidateId
 } from "../export-to-writing.ts";
 import type { ScoutCandidate } from "../types.ts";
 
@@ -52,13 +55,23 @@ function candidate(overrides: Partial<ScoutCandidate> = {}): ScoutCandidate {
     observedFeature: overrides.observedFeature ?? "친구 체크인",
     evidenceSnippet: overrides.evidenceSnippet ?? "친구 체크인을 제공한다.",
     evidenceType: overrides.evidenceType ?? "article",
+    evidenceParagraphIds: overrides.evidenceParagraphIds,
     verificationStatus: overrides.verificationStatus ?? "verified",
     briefAllowed: overrides.briefAllowed ?? (overrides.verificationStatus !== "needs-research"),
-    verificationNotes: overrides.verificationNotes
+    verificationNotes: overrides.verificationNotes,
+    confirmedFacts: overrides.confirmedFacts,
+    reasonableInferences: overrides.reasonableInferences,
+    needsVerification: overrides.needsVerification,
+    missingFields: overrides.missingFields
   };
 }
 
 describe("Writing Brief v2", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.OPENAI_API_KEY;
+  });
+
   it("turns a meditation app friend check-in candidate into a product retention brief", () => {
     const meditationCandidate = candidate();
     const mechanism = inferBusinessMechanism(meditationCandidate).toLowerCase();
@@ -73,6 +86,98 @@ describe("Writing Brief v2", () => {
     expect(brief.refinedCoreQuestion).toMatch(/친구|체크인/);
     expect(brief.postOutline.length).toBeGreaterThanOrEqual(7);
     expect(brief.evidenceBoundary.needsVerification.some((item) => item.includes("앱 화면"))).toBe(true);
+  });
+
+  it("preserves candidate source-backed evidence in the evidence boundary", () => {
+    const brief = toWritingBrief(
+      candidate({
+        sourceUrl: "https://www.headspace.com/articles/friend-check-in",
+        entityName: "Headspace",
+        entityType: "app",
+        observedFeature: "friend check-in reminder",
+        evidenceSnippet: "Headspace says friends can check in on meditation progress.",
+        evidenceParagraphIds: ["p7"],
+        confirmedFacts: ["Headspace names friend check-ins in the source."],
+        reasonableInferences: ["Friend accountability may support retention."],
+        needsVerification: ["Do not claim retention lift without metrics."]
+      })
+    );
+
+    expect(brief.evidenceBoundary.confirmedFacts).toContain(
+      "Headspace names friend check-ins in the source."
+    );
+    expect(brief.evidenceBoundary.confirmedFacts).toContain(
+      "출처 증거 문장: Headspace says friends can check in on meditation progress."
+    );
+    expect(brief.evidenceBoundary.confirmedFacts).toContain("증거 paragraph id: p7");
+    expect(brief.evidenceBoundary.confirmedFacts).toContain("검증된 관찰 기능/선택: friend check-in reminder");
+    expect(brief.evidenceBoundary.reasonableInferences).toContain(
+      "Friend accountability may support retention."
+    );
+    expect(brief.evidenceBoundary.needsVerification).toContain(
+      "Do not claim retention lift without metrics."
+    );
+    expect(brief.evidenceNeeded).toContain("Do not claim retention lift without metrics.");
+  });
+
+  it("does not let LLM brief output erase candidate evidence boundaries", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  refinedCoreQuestion: "왜 친구 체크인이 필요할까?",
+                  coreTension: "LLM tension",
+                  nonObviousInsight: "LLM insight",
+                  businessMechanism: "LLM mechanism",
+                  consumerPsychology: "LLM psychology",
+                  sharpThesis: "LLM thesis",
+                  genericThesisToAvoid: ["LLM generic"],
+                  betterOpeningScene: "LLM opening",
+                  postOutline: ["1", "2", "3", "4", "5", "6", "7"],
+                  evidenceNeeded: ["LLM 추가 조사"],
+                  evidenceBoundary: {
+                    confirmedFacts: ["LLM confirmed fact"],
+                    reasonableInferences: ["LLM inference"],
+                    needsVerification: ["LLM caution"]
+                  },
+                  styleReference: "product-observation"
+                })
+              }
+            }
+          ]
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const brief = await toWritingBriefWithLlm(
+      candidate({
+        sourceUrl: "https://www.headspace.com/articles/friend-check-in",
+        evidenceSnippet: "Headspace says friends can check in on meditation progress.",
+        evidenceParagraphIds: ["p7"],
+        confirmedFacts: ["Headspace names friend check-ins in the source."],
+        needsVerification: ["Do not claim retention lift without metrics."]
+      })
+    );
+
+    expect(brief.evidenceBoundary.confirmedFacts).toContain(
+      "Headspace names friend check-ins in the source."
+    );
+    expect(brief.evidenceBoundary.confirmedFacts).toContain("LLM confirmed fact");
+    expect(brief.evidenceBoundary.confirmedFacts).toContain(
+      "출처 증거 문장: Headspace says friends can check in on meditation progress."
+    );
+    expect(brief.evidenceBoundary.confirmedFacts).toContain("증거 paragraph id: p7");
+    expect(brief.evidenceBoundary.needsVerification).toContain(
+      "Do not claim retention lift without metrics."
+    );
+    expect(brief.evidenceBoundary.needsVerification).toContain("LLM caution");
+    expect(brief.evidenceNeeded).toContain("Do not claim retention lift without metrics.");
+    expect(brief.evidenceNeeded).toContain("LLM 추가 조사");
   });
 
   it("uses a retail style reference for retail candidates", () => {
@@ -94,6 +199,17 @@ describe("Writing Brief v2", () => {
     expect(markdown).toContain("## Business Mechanism");
     expect(markdown).toContain("## 확인된 사실 / 추론 / 확인 필요");
     expect(markdown).toContain("## 필요한 추가 조사");
+  });
+
+  it("blocks direct writing brief creation for unsafe candidates", () => {
+    expect(() =>
+      toWritingBrief(
+        candidate({
+          verificationStatus: "needs-research",
+          briefAllowed: false
+        })
+      )
+    ).toThrow("verified and briefAllowed");
   });
 
   it("exports a research task instead of a normal writing brief for needs-research candidates", async () => {
@@ -134,6 +250,81 @@ describe("Writing Brief v2", () => {
 
       expect(markdown).toContain("# Writing Brief:");
       expect(markdown).not.toContain("# Research Task:");
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("loads candidate IDs from the latest daily snapshot before falling back to raw input", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "writing-brief-snapshot-"));
+
+    try {
+      const snapshotPath = join(outputDir, "latest-candidates.json");
+      const snapshotCandidate = candidate({
+        id: "candidate:snapshot:verified",
+        candidateId: "candidate:snapshot:verified",
+        sourceUrl: "https://www.headspace.com/articles/friend-check-in",
+        verificationStatus: "verified",
+        briefAllowed: true
+      });
+      await writeFile(
+        snapshotPath,
+        `${JSON.stringify(
+          {
+            version: 1,
+            runId: "research-agent:2026-07-04",
+            updatedAt: "2026-07-04T00:00:00.000Z",
+            candidates: [snapshotCandidate]
+          },
+          null,
+          2
+        )}\n`,
+        "utf8"
+      );
+
+      const outputPath = await writeWritingBriefForCandidateId("candidate:snapshot:verified", {
+        candidateSnapshotPath: snapshotPath,
+        inputPath: join(outputDir, "missing-input.json"),
+        outputDir,
+        date: "2026-07-04"
+      });
+      const markdown = await readFile(outputPath ?? "", "utf8");
+
+      expect(markdown).toContain("# Writing Brief:");
+      expect(markdown).not.toContain("# Research Task:");
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("loads research task candidate IDs from the latest daily snapshot", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "research-task-snapshot-"));
+
+    try {
+      const snapshotPath = join(outputDir, "latest-candidates.json");
+      const snapshotCandidate = candidate({
+        id: "candidate:snapshot:needs-research",
+        candidateId: "candidate:snapshot:needs-research",
+        verificationStatus: "needs-research",
+        briefAllowed: false,
+        missingFields: ["source-backed evidence provenance"]
+      });
+      await writeFile(
+        snapshotPath,
+        `${JSON.stringify({ version: 1, runId: "research-agent:2026-07-04", candidates: [snapshotCandidate] }, null, 2)}\n`,
+        "utf8"
+      );
+
+      const outputPath = await writeResearchTaskForCandidateId("candidate:snapshot:needs-research", {
+        candidateSnapshotPath: snapshotPath,
+        inputPath: join(outputDir, "missing-input.json"),
+        outputDir,
+        date: "2026-07-04"
+      });
+      const markdown = await readFile(outputPath ?? "", "utf8");
+
+      expect(markdown).toContain("# Research Task:");
+      expect(markdown).toContain("source-backed evidence provenance");
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }

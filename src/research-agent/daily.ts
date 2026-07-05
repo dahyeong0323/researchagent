@@ -5,6 +5,7 @@ import { DEFAULT_TOP_LIMIT } from "./config.ts";
 import { generateCandidatesFromDocument } from "./candidate-from-document.ts";
 import { dedupeCandidates } from "./dedupe.ts";
 import { loadLocalEnv } from "./env.ts";
+import { readFeedbackMemory } from "./feedback.ts";
 import { readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { processRawCandidates } from "./scout.ts";
 import { candidatesFromDocumentOrFallback } from "./source-candidates.ts";
@@ -28,7 +29,20 @@ export type DailyRunArtifact = {
   };
   notionWritten: number;
   telegramSent: number;
+  historySkipped: number;
+  candidateRefs: DailyCandidateRef[];
+  candidateSnapshotPath?: string;
   errors: string[];
+};
+
+export type DailyCandidateRef = {
+  candidateId: string;
+  topicName: string;
+  sourceUrl: string;
+  entityName?: string;
+  observedFeature?: string;
+  verificationStatus: ScoutCandidate["verificationStatus"];
+  recordedAt: string;
 };
 
 type ManualInbox =
@@ -45,6 +59,9 @@ export type DailyRunOptions = {
   feedsPath?: string;
   manualInboxPath?: string;
   runsDir?: string;
+  historyPath?: string;
+  candidateSnapshotPath?: string;
+  feedbackPath?: string;
 };
 
 export type DailyRunDependencies = {
@@ -160,9 +177,224 @@ function sortCandidates(candidates: ScoutCandidate[]): ScoutCandidate[] {
   return [...candidates].sort((left, right) => right.score - left.score || left.topicName.localeCompare(right.topicName));
 }
 
+function normalizeUrlForDedupe(urlValue: string): string {
+  try {
+    const parsed = new URL(urlValue);
+    parsed.hash = "";
+    parsed.search = "";
+    return parsed.toString().replace(/\/$/, "").toLowerCase();
+  } catch {
+    return urlValue.trim().toLowerCase().replace(/\/$/, "");
+  }
+}
+
+function normalizeTextForDedupe(value: string | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function candidateDedupeKeys(candidate: Pick<ScoutCandidate, "candidateId" | "topicName" | "sourceUrl" | "entityName" | "observedFeature">): string[] {
+  const keys = [
+    `id:${candidate.candidateId}`,
+    `url:${normalizeUrlForDedupe(candidate.sourceUrl)}`,
+    `topic:${normalizeTextForDedupe(candidate.topicName)}`
+  ];
+
+  const entity = normalizeTextForDedupe(candidate.entityName);
+  const feature = normalizeTextForDedupe(candidate.observedFeature);
+  if (entity && feature) {
+    keys.push(`entity-feature:${entity}:${feature}`);
+  }
+
+  return keys.filter((key) => !key.endsWith(":"));
+}
+
+function verificationRank(candidate: ScoutCandidate): number {
+  if (candidate.verificationStatus === "verified") {
+    return 3;
+  }
+  if (candidate.verificationStatus === "needs-research") {
+    return 2;
+  }
+  if (candidate.verificationStatus === "rejected") {
+    return 0;
+  }
+  return 1;
+}
+
+function evidenceScore(candidate: ScoutCandidate): number {
+  return (candidate.evidenceSnippet?.trim().length ?? 0) + (candidate.evidenceParagraphIds?.length ?? 0) * 20;
+}
+
+function isBetterScoutCandidate(candidate: ScoutCandidate, current: ScoutCandidate): boolean {
+  const candidateRanks = [
+    verificationRank(candidate),
+    candidate.score,
+    candidate.sourceReliability ?? candidate.scoreBreakdown.sourceReliability,
+    evidenceScore(candidate)
+  ];
+  const currentRanks = [
+    verificationRank(current),
+    current.score,
+    current.sourceReliability ?? current.scoreBreakdown.sourceReliability,
+    evidenceScore(current)
+  ];
+
+  for (let index = 0; index < candidateRanks.length; index += 1) {
+    if (candidateRanks[index] !== currentRanks[index]) {
+      return candidateRanks[index] > currentRanks[index];
+    }
+  }
+
+  return false;
+}
+
+function dedupeScoutCandidates(candidates: ScoutCandidate[]): ScoutCandidate[] {
+  const kept: ScoutCandidate[] = [];
+  const keyToIndex = new Map<string, number>();
+
+  for (const candidate of candidates) {
+    const keys = candidateDedupeKeys(candidate);
+    const existingIndex = keys.map((key) => keyToIndex.get(key)).find((index) => index !== undefined);
+
+    if (existingIndex !== undefined) {
+      if (isBetterScoutCandidate(candidate, kept[existingIndex])) {
+        kept[existingIndex] = candidate;
+        for (const key of keys) {
+          keyToIndex.set(key, existingIndex);
+        }
+      }
+      continue;
+    }
+
+    const nextIndex = kept.length;
+    kept.push(candidate);
+    for (const key of keys) {
+      keyToIndex.set(key, nextIndex);
+    }
+  }
+
+  return kept;
+}
+
+type DailyCandidateHistory = {
+  version: 1;
+  updatedAt: string;
+  candidates: DailyCandidateRef[];
+};
+
+type DailyCandidateSnapshot = {
+  version: 1;
+  runId: string;
+  updatedAt: string;
+  candidates: ScoutCandidate[];
+};
+
+function normalizeHistory(value: unknown): DailyCandidateHistory {
+  if (!value || typeof value !== "object" || !("candidates" in value) || !Array.isArray((value as { candidates: unknown }).candidates)) {
+    return {
+      version: 1,
+      updatedAt: new Date(0).toISOString(),
+      candidates: []
+    };
+  }
+
+  const record = value as { updatedAt?: unknown; candidates: unknown[] };
+  return {
+    version: 1,
+    updatedAt: typeof record.updatedAt === "string"
+      ? record.updatedAt
+      : new Date(0).toISOString(),
+    candidates: record.candidates.filter((item): item is DailyCandidateRef =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as DailyCandidateRef).candidateId === "string" &&
+      typeof (item as DailyCandidateRef).topicName === "string" &&
+      typeof (item as DailyCandidateRef).sourceUrl === "string"
+    )
+  };
+}
+
+async function readCandidateHistory(path: string): Promise<DailyCandidateHistory> {
+  try {
+    return normalizeHistory(JSON.parse(await readFile(resolve(path), "utf8")));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      return normalizeHistory(undefined);
+    }
+    throw error;
+  }
+}
+
+function candidateRef(candidate: ScoutCandidate, recordedAt: string): DailyCandidateRef {
+  return {
+    candidateId: candidate.candidateId,
+    topicName: candidate.topicName,
+    sourceUrl: candidate.sourceUrl,
+    entityName: candidate.entityName,
+    observedFeature: candidate.observedFeature,
+    verificationStatus: candidate.verificationStatus,
+    recordedAt
+  };
+}
+
+function filterCandidatesByHistory(
+  candidates: ScoutCandidate[],
+  history: DailyCandidateHistory
+): { candidates: ScoutCandidate[]; skipped: number } {
+  const historyKeys = new Set(history.candidates.flatMap(candidateDedupeKeys));
+  const filtered = candidates.filter((candidate) => !candidateDedupeKeys(candidate).some((key) => historyKeys.has(key)));
+  return {
+    candidates: filtered,
+    skipped: candidates.length - filtered.length
+  };
+}
+
+async function writeCandidateHistory(path: string, candidates: ScoutCandidate[], recordedAt: string): Promise<void> {
+  if (candidates.length === 0) {
+    return;
+  }
+
+  const history = await readCandidateHistory(path);
+  const newRefs = candidates.map((candidate) => candidateRef(candidate, recordedAt));
+  const newKeys = new Set(newRefs.flatMap(candidateDedupeKeys));
+  const merged: DailyCandidateHistory = {
+    version: 1,
+    updatedAt: recordedAt,
+    candidates: [
+      ...history.candidates.filter((ref) => !candidateDedupeKeys(ref).some((key) => newKeys.has(key))),
+      ...newRefs
+    ]
+  };
+
+  const outputPath = resolve(path);
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+}
+
 async function writeRunArtifact(path: string, artifact: DailyRunArtifact): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
+}
+
+async function writeCandidateSnapshot(
+  path: string,
+  runId: string,
+  candidates: ScoutCandidate[],
+  updatedAt: string
+): Promise<void> {
+  const snapshot: DailyCandidateSnapshot = {
+    version: 1,
+    runId,
+    updatedAt,
+    candidates
+  };
+  const outputPath = resolve(path);
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
 }
 
 export async function runDaily(
@@ -171,6 +403,7 @@ export async function runDaily(
 ): Promise<{ artifact: DailyRunArtifact; artifactPath: string; candidates: ScoutCandidate[] }> {
   const now = dependencies.now?.() ?? new Date();
   const date = options.date ?? todayIsoDate(now);
+  const runId = `research-agent:${date}`;
   const limit = options.limit ?? DEFAULT_TOP_LIMIT;
   const startedAt = now.toISOString();
   const errors: string[] = [];
@@ -232,23 +465,53 @@ export async function runDaily(
     errors.push(`manual-inbox: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  const rawCandidates = processRawCandidates(dedupeCandidates(rawItems), rawItems.length || limit);
-  const candidates = sortCandidates([...rawCandidates, ...directCandidates]).slice(0, limit);
+  let feedbackMemory;
+  try {
+    feedbackMemory = await readFeedbackMemory(options.feedbackPath ?? process.env.SCOUT_FEEDBACK_PATH);
+  } catch (error) {
+    errors.push(`feedback: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const rawCandidates = processRawCandidates(dedupeCandidates(rawItems), rawItems.length || limit, feedbackMemory);
+  const combinedCandidates = sortCandidates(dedupeScoutCandidates([...rawCandidates, ...directCandidates]));
+  const runsDir = options.runsDir ?? DEFAULT_RUNS_DIR;
+  const historyPath = options.historyPath ?? resolve(runsDir, "candidate-history.json");
+  const historyResult = options.dryRun
+    ? { candidates: combinedCandidates, skipped: 0 }
+    : filterCandidatesByHistory(combinedCandidates, await readCandidateHistory(historyPath));
+  const candidates = historyResult.candidates.slice(0, limit);
   const counts = candidateCounts(candidates);
 
   let notionWritten = 0;
-  if (candidates.length > 0) {
+  const writtenCandidates: ScoutCandidate[] = [];
+  if (!options.dryRun && candidates.length > 0) {
     try {
       const notionWriter = dependencies.writeCandidatesToNotion ?? writeCandidatesToNotion;
-      const results = await notionWriter(candidates, readNotionConfig(Boolean(options.dryRun)));
+      const results = await notionWriter(candidates, readNotionConfig(false));
       notionWritten = results.filter((result) => result.ok).length;
+      const writtenCandidateIds = new Set(results.filter((result) => result.ok).map((result) => result.candidateId));
+      writtenCandidates.push(
+        ...candidates.filter((candidate) => writtenCandidateIds.has(candidate.id) || writtenCandidateIds.has(candidate.candidateId))
+      );
     } catch (error) {
       errors.push(`notion: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
+  const finishedAt = (dependencies.now?.() ?? new Date()).toISOString();
+  const candidateSnapshotPath = options.candidateSnapshotPath ?? resolve(runsDir, "latest-candidates.json");
+  let candidateSnapshotWritten = false;
+  if (!options.dryRun && candidates.length > 0) {
+    try {
+      await writeCandidateSnapshot(candidateSnapshotPath, runId, candidates, finishedAt);
+      candidateSnapshotWritten = true;
+    } catch (error) {
+      errors.push(`candidate-snapshot: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   let telegramSent = 0;
-  if (!options.dryRun && candidates.length > 0 && notionWritten > 0) {
+  if (!options.dryRun && candidates.length > 0 && notionWritten > 0 && candidateSnapshotWritten) {
     try {
       const telegramSender = dependencies.sendTelegramDailySummary ?? sendTelegramDailySummary;
       telegramSent = (await telegramSender(candidates.slice(0, Math.min(limit, 5)))) ? 1 : 0;
@@ -257,19 +520,27 @@ export async function runDaily(
     }
   }
 
-  const finishedAt = (dependencies.now?.() ?? new Date()).toISOString();
+  if (!options.dryRun) {
+    await writeCandidateHistory(historyPath, writtenCandidates, finishedAt);
+  }
+
   const artifact: DailyRunArtifact = {
-    runId: `research-agent:${date}`,
+    runId,
     startedAt,
     finishedAt,
     sourceCounts,
     candidateCounts: counts,
     notionWritten,
     telegramSent,
+    historySkipped: historyResult.skipped,
+    candidateRefs: candidates.map((candidate) => candidateRef(candidate, finishedAt)),
+    candidateSnapshotPath: !options.dryRun && candidateSnapshotWritten ? resolve(candidateSnapshotPath) : undefined,
     errors
   };
-  const artifactPath = resolve(options.runsDir ?? DEFAULT_RUNS_DIR, `${date}.json`);
-  await writeRunArtifact(artifactPath, artifact);
+  const artifactPath = resolve(runsDir, `${date}.json`);
+  if (!options.dryRun) {
+    await writeRunArtifact(artifactPath, artifact);
+  }
 
   return { artifact, artifactPath, candidates };
 }
