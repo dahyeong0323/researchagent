@@ -41,7 +41,10 @@ npm run scout:notion -- --dry-run
 npm run scout:feedback
 npm run export:selected
 npm run feedback:notion
+npm run notion:schema:check
+npm run notion:schema:update
 npm run telegram:poll
+npm run telegram:test
 npm run daily:dry
 npm run daily
 npm run typecheck
@@ -129,6 +132,8 @@ npm run daily:dry
 
 The daily batch loads RSS feed config, enriches RSS article pages when possible, reads optional manual inbox items, extracts candidates, and applies verification/scoring/dedupe. Dry-run mode does not write Notion payloads, Telegram messages, run artifacts, candidate snapshots, or history files.
 
+Live mode refuses to run against sample fixtures, local fixture feed URLs, `.test` hosts, `example.*` hosts, or placeholder URLs. The default `data/research-agent/feeds.sample.json` is for dry-run/dev only. For live runs, set `RESEARCH_AGENT_FEEDS_PATH` or `RESEARCH_AGENT_MANUAL_INBOX_PATH` to real public sources.
+
 Live mode writes Notion pages and saves run state under:
 
 ```text
@@ -165,6 +170,13 @@ npm run scout:notion -- --dry-run
 
 Live writes require Notion environment variables and a Notion database whose properties match `docs/notion-db-schema.md`.
 
+Check and repair the live Notion schema before running Telegram-connected writes:
+
+```powershell
+npm run notion:schema:check
+npm run notion:schema:update
+```
+
 The Notion database must include a `Candidate ID` rich text property. The agent writes `ScoutCandidate.id` there so future Telegram callbacks can find and update the same candidate.
 
 The database must also include verification fields: `서비스/브랜드명`, `관찰된 기능/변화`, `검증 상태`, `근거 스니펫`, `근거 유형`, and `검증 메모`. Candidates from sample URLs or without a real service, brand, company, app, or store name are marked `needs-research`.
@@ -180,6 +192,12 @@ npm run scout:notion -- --llm --limit 5
 Telegram buttons emit compact callback data to stay under Telegram's 64-byte limit. Short candidate IDs are embedded directly; long candidate IDs use an opaque local ref stored in `data/research-agent/telegram-callbacks.json`. Legacy callback data such as `status:selected:<candidateId>` and `brief:create:<candidateId>` is still parsed for compatibility.
 
 The local polling worker processes these into Notion status updates, Writing Brief files, or Research Task files. Telegram summaries show entity/evidence for verified candidates and `missingFields` for unresolved items.
+
+For button-only local testing, send the latest candidate snapshot with an explicit test title. This does not claim a Notion write happened:
+
+```powershell
+npm run telegram:test
+```
 
 Run the local polling worker to process Telegram button clicks and update Notion candidate statuses:
 

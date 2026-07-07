@@ -63,10 +63,18 @@ function extractParagraphs(html: string): SourceParagraph[] {
 function readableHtmlRegion(html: string): string {
   return (
     firstMatch(html, [
+      /<div\b[^>]*data-copy-content\b[^>]*>([\s\S]*?)<\/div>/i,
       /<article\b[^>]*>([\s\S]*?)<\/article>/i,
       /<main\b[^>]*>([\s\S]*?)<\/main>/i,
       /<body\b[^>]*>([\s\S]*?)<\/body>/i
     ]) ?? html
+  );
+}
+
+function removeNonContentBlocks(html: string): string {
+  return ["aside", "nav", "footer"].reduce(
+    (current, tag) => current.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, "gi"), " "),
+    html
   );
 }
 
@@ -93,6 +101,7 @@ export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDo
   const cleanedHtml = html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+  const contentHtml = removeNonContentBlocks(cleanedHtml);
 
   const canonicalUrl =
     absolutizeUrl(
@@ -125,7 +134,7 @@ export function parseHtmlDocument(html: string, sourceUrl: string): ParsedHtmlDo
     /<time\b[^>]*datetime=["']([^"']+)["'][^>]*>/i
   ]);
 
-  const readableRegion = readableHtmlRegion(cleanedHtml);
+  const readableRegion = readableHtmlRegion(contentHtml);
   const extractedParagraphs = extractParagraphs(readableRegion);
   const fallbackText = extractedParagraphs.length > 0 ? "" : fallbackBodyText(readableRegion);
   const paragraphs = extractedParagraphs.length > 0 ? extractedParagraphs : fallbackParagraphsFromText(fallbackText);

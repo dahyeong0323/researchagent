@@ -19,6 +19,10 @@ export type TelegramReplyMarkup = {
   inline_keyboard: TelegramInlineKeyboardButton[][];
 };
 
+export type TelegramSummaryOptions = {
+  title?: string;
+};
+
 export function readTelegramConfig(): TelegramConfig {
   return {
     enabled: process.env.TELEGRAM_ENABLED === "1",
@@ -90,7 +94,7 @@ function missingFieldsLine(candidate: ScoutCandidate): string | undefined {
   }
 
   const missingFields = candidate.missingFields ?? candidate.needsVerification ?? [];
-  return `Missing Fields: ${missingFields.length > 0 ? missingFields.join(", ") : "needs-research"}`;
+  return `Missing Fields (blocks writing): ${missingFields.length > 0 ? missingFields.join(", ") : "needs-research"}`;
 }
 
 function evidenceLine(candidate: ScoutCandidate): string | undefined {
@@ -101,9 +105,9 @@ function evidenceLine(candidate: ScoutCandidate): string | undefined {
   return `Evidence: ${candidate.evidenceSnippet ?? "verified evidence present"}`;
 }
 
-export function renderTelegramDailySummary(candidates: ScoutCandidate[]): string {
+export function renderTelegramDailySummary(candidates: ScoutCandidate[], options: TelegramSummaryOptions = {}): string {
   const topCandidates = candidates.slice(0, TOP_CANDIDATE_LIMIT);
-  const lines = [`오늘 LinkedIn 소재 후보 ${candidates.length}개를 Notion에 저장했습니다.`, "", "Top 5 후보"];
+  const lines = [options.title ?? `오늘 LinkedIn 소재 후보 ${candidates.length}개를 Notion에 저장했습니다.`, "", "Top 5 후보"];
 
   topCandidates.forEach((candidate, index) => {
     const displayName = candidate.entityName ?? candidate.topicName;

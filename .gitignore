@@ -12,6 +12,7 @@ node_modules/
 data/research-agent/feedback.notion.json
 data/research-agent/telegram-offset.json
 data/research-agent/telegram-callbacks.json
+data/research-agent/*.log
 data/research-agent/runs/
 data/research-agent/writing-briefs/
 data/research-agent/logs/

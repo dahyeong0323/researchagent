@@ -69,7 +69,7 @@ describe("Telegram daily notification", () => {
     expect(summary).toContain("Verification Status: needs-research");
     expect(summary).toContain("Source: 테스트 출처");
     expect(summary).toContain("Evidence Type: unknown");
-    expect(summary).toContain("Missing Fields: needs-research");
+    expect(summary).toContain("Missing Fields (blocks writing): needs-research");
     expect(summary).toContain("Why Gudi Question: 왜 굳이 이 브랜드는 별도 매장을 만들었을까?");
     expect(summary).toContain("Brief Allowed: no");
     expect(summary).toContain("Next Action: Make Research Task");
@@ -103,8 +103,17 @@ describe("Telegram daily notification", () => {
     ]);
 
     expect(summary).toContain(
-      "Missing Fields: observed feature or strategic choice, evidence snippet or evidence paragraph reference"
+      "Missing Fields (blocks writing): observed feature or strategic choice, evidence snippet or evidence paragraph reference"
     );
+  });
+
+  it("renders an explicit Telegram test title when provided", () => {
+    const summary = renderTelegramDailySummary([candidate()], {
+      title: "Telegram button test: Notion write was not attempted."
+    });
+
+    expect(summary.startsWith("Telegram button test: Notion write was not attempted.")).toBe(true);
+    expect(summary).not.toContain("Notion에 저장했습니다");
   });
 
   it("does not send an empty daily summary", async () => {

@@ -97,6 +97,49 @@ describe("manual URL collector", () => {
     expect(result.sourceDocument.paragraphs[0]?.text).toContain("introduced a refill station pilot");
   });
 
+  it("removes aside recommendation blocks from readable article content", async () => {
+    const html = [
+      "<html>",
+      "<head><title>Acme Beauty launches refill station pop-up</title></head>",
+      "<body>",
+      "<article>",
+      "<p>Acme Beauty launched a refill station pop-up in Seoul.</p>",
+      "<aside><h3>Beta Market announces unrelated checkout changes</h3></aside>",
+      "</article>",
+      "</body>",
+      "</html>"
+    ].join("");
+
+    const parsed = parseHtmlDocument(html, "https://news.example.org/acme");
+
+    expect(parsed.contentText).toContain("Acme Beauty launched a refill station pop-up");
+    expect(parsed.contentText).not.toContain("Beta Market announces unrelated checkout changes");
+  });
+
+  it("prefers dedicated copy-content article text over surrounding chrome", async () => {
+    const html = [
+      "<html>",
+      "<head><title>Acme Beauty launches refill station pop-up</title></head>",
+      "<body>",
+      "<article>",
+      "<p>Visible image caption should not become the article body.</p>",
+      "<div class=\"visuallyhidden\" aria-hidden=\"true\">",
+      "<p>Text of this article</p>",
+      "</div>",
+      "<div data-copy-content class=\"visuallyhidden\" aria-hidden=\"true\">",
+      "<p>Acme Beauty launched a refill station pop-up in Seoul.</p>",
+      "</div>",
+      "</article>",
+      "</body>",
+      "</html>"
+    ].join("");
+
+    const parsed = parseHtmlDocument(html, "https://news.example.org/acme");
+
+    expect(parsed.contentText).toContain("Acme Beauty launched a refill station pop-up");
+    expect(parsed.contentText).not.toContain("Visible image caption");
+  });
+
   it("preserves raw HTML so JSON-LD entity extraction works", async () => {
     const html = [
       "<html>",

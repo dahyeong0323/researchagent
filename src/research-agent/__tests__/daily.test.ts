@@ -148,6 +148,97 @@ describe("daily batch runner", () => {
     }
   });
 
+  it("allows sample feed paths during dry-run only", async () => {
+    const paths = await tempRunPaths();
+    const sampleFeedsPath = join(paths.root, "feeds.sample.json");
+    try {
+      await writeFile(sampleFeedsPath, await readFile(paths.feedsPath, "utf8"), "utf8");
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: sampleFeedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [verifiedRawItem()]
+        }
+      );
+
+      expect(result.artifact.candidateCounts.total).toBe(1);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects sample feed paths before live Notion writes", async () => {
+    const paths = await tempRunPaths();
+    const sampleFeedsPath = join(paths.root, "feeds.sample.json");
+    let notionCalled = false;
+    try {
+      await writeFile(sampleFeedsPath, await readFile(paths.feedsPath, "utf8"), "utf8");
+
+      await expect(
+        runDaily(
+          {
+            dryRun: false,
+            date: "2026-07-04",
+            feedsPath: sampleFeedsPath,
+            manualInboxPath: paths.manualInboxPath,
+            runsDir: paths.runsDir
+          },
+          {
+            now,
+            collectRssFeeds: async () => [verifiedRawItem()],
+            writeCandidatesToNotion: async () => {
+              notionCalled = true;
+              return [];
+            }
+          }
+        )
+      ).rejects.toThrow("Unsafe live research-agent source configuration");
+      expect(notionCalled).toBe(false);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects unsafe collector source URLs before live Notion writes", async () => {
+    const paths = await tempRunPaths();
+    let notionCalled = false;
+    try {
+      await expect(
+        runDaily(
+          {
+            dryRun: false,
+            date: "2026-07-04",
+            feedsPath: paths.feedsPath,
+            manualInboxPath: paths.manualInboxPath,
+            runsDir: paths.runsDir
+          },
+          {
+            now,
+            collectRssFeeds: async () => [
+              verifiedRawItem({
+                sourceUrl: "https://news.acme.test/acme-refill",
+                rawSummary: "Acme Beauty launched a refill station pop-up in Seoul."
+              })
+            ],
+            writeCandidatesToNotion: async () => {
+              notionCalled = true;
+              return [];
+            }
+          }
+        )
+      ).rejects.toThrow("fixture or placeholder host");
+      expect(notionCalled).toBe(false);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
   it("creates a run artifact for live runs", async () => {
     const paths = await tempRunPaths();
     try {

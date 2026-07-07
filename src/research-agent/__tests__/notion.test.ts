@@ -6,6 +6,7 @@ import {
   updateCandidateStatusByCandidateId,
   validateCandidatePagePayload
 } from "../notion.ts";
+import { EXPECTED_NOTION_SCHEMA } from "../notion-schema.ts";
 import type { ResearchTask, ScoutCandidate } from "../types.ts";
 
 const candidate: ScoutCandidate = {
@@ -200,6 +201,39 @@ describe("Notion payload mapping", () => {
       "Brief Allowed": { checkbox: false },
       "Next Action": { select: { name: "Make Research Task" } }
     });
+  });
+
+  it("keeps the schema definition in sync with candidate and research task payload properties", () => {
+    const schemaNames = new Set(EXPECTED_NOTION_SCHEMA.map((property) => property.name));
+    const candidatePayload = buildCandidatePagePayload(candidate, {
+      database_id: "test-database-id"
+    });
+    const task: ResearchTask = {
+      taskId: "research-task:candidate-telegram-1",
+      candidateId: "candidate-telegram-1",
+      topicName: "Research needed",
+      taskTitle: "Research needed",
+      taskReason: "Evidence is missing.",
+      reason: "Evidence is missing.",
+      missingFields: ["evidence snippet or evidence paragraph reference"],
+      requiredSources: ["Official source"],
+      verificationQuestions: ["Which source supports the feature?"],
+      questionsToAnswer: ["Which source supports the feature?"],
+      suggestedSearchQueries: ["test brand official feature"],
+      requiredEvidence: ["A source sentence that directly supports the feature."],
+      priority: "medium",
+      completionCriteria: ["Attach evidence."],
+      status: "open",
+      createdAt: "2026-07-03T00:00:00.000Z"
+    };
+    const taskProperties = buildResearchTaskNotionProperties(task, candidate);
+
+    for (const propertyName of Object.keys(candidatePayload.properties)) {
+      expect(schemaNames.has(propertyName)).toBe(true);
+    }
+    for (const propertyName of Object.keys(taskProperties)) {
+      expect(schemaNames.has(propertyName)).toBe(true);
+    }
   });
 
   it("builds synchronized status update properties for selected ready candidates", () => {

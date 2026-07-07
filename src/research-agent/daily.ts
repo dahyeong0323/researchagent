@@ -6,6 +6,7 @@ import { generateCandidatesFromDocument } from "./candidate-from-document.ts";
 import { dedupeCandidates } from "./dedupe.ts";
 import { loadLocalEnv } from "./env.ts";
 import { readFeedbackMemory } from "./feedback.ts";
+import { assertSafeLiveSources, UnsafeLiveSourceError } from "./live-source-guard.ts";
 import { candidatesWithSuccessfulNotionWrites, readNotionConfig, writeCandidatesToNotion } from "./notion.ts";
 import { processRawCandidates } from "./scout.ts";
 import { candidatesFromDocumentOrFallback } from "./source-candidates.ts";
@@ -415,9 +416,15 @@ export async function runDaily(
   const manualCollector = dependencies.collectManualUrl ?? collectManualUrl;
 
   try {
-    const feedValue = await readJsonIfExists(options.feedsPath ?? DEFAULT_FEEDS_PATH);
+    const feedsPath = options.feedsPath ?? DEFAULT_FEEDS_PATH;
+    const feedValue = await readJsonIfExists(feedsPath);
     if (feedValue) {
       assertFeedConfigs(feedValue);
+      assertSafeLiveSources({
+        dryRun: options.dryRun,
+        feedsPath,
+        feeds: feedValue
+      });
       if (dependencies.collectRssFeeds) {
         const rssItems = await rssCollector(feedValue as FeedConfig[], { now });
         rawItems.push(...rssItems);
@@ -434,13 +441,23 @@ export async function runDaily(
       sourceCounts.rssDocuments = 0;
     }
   } catch (error) {
+    if (error instanceof UnsafeLiveSourceError) {
+      throw error;
+    }
     sourceCounts.rss = 0;
     errors.push(`rss: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   try {
-    const manualValue = await readJsonIfExists(options.manualInboxPath ?? DEFAULT_MANUAL_INBOX_PATH);
+    const manualInboxPath = options.manualInboxPath ?? DEFAULT_MANUAL_INBOX_PATH;
+    const manualValue = await readJsonIfExists(manualInboxPath);
     const manualInbox = normalizeManualInbox(manualValue);
+    assertSafeLiveSources({
+      dryRun: options.dryRun,
+      manualInboxPath,
+      manualUrls: manualInbox.urls,
+      rawSourceItems: manualInbox.rawSourceItems
+    });
     rawItems.push(...manualInbox.rawSourceItems);
     sourceCounts.manualRaw = manualInbox.rawSourceItems.length;
     sourceCounts.manualUrl = 0;
@@ -460,6 +477,9 @@ export async function runDaily(
       }
     }
   } catch (error) {
+    if (error instanceof UnsafeLiveSourceError) {
+      throw error;
+    }
     sourceCounts.manualRaw = 0;
     sourceCounts.manualUrl = 0;
     errors.push(`manual-inbox: ${error instanceof Error ? error.message : String(error)}`);
@@ -474,6 +494,11 @@ export async function runDaily(
 
   const rawCandidates = processRawCandidates(dedupeCandidates(rawItems), rawItems.length || limit, feedbackMemory);
   const combinedCandidates = sortCandidates(dedupeScoutCandidates([...rawCandidates, ...directCandidates]));
+  assertSafeLiveSources({
+    dryRun: options.dryRun,
+    rawSourceItems: rawItems,
+    candidates: combinedCandidates
+  });
   const runsDir = options.runsDir ?? DEFAULT_RUNS_DIR;
   const historyPath = options.historyPath ?? resolve(runsDir, "candidate-history.json");
   const historyResult = options.dryRun
