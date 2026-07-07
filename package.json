@@ -16,6 +16,7 @@
     "notion:schema:check": "tsx src/research-agent/notion-schema-cli.ts --check",
     "notion:schema:update": "tsx src/research-agent/notion-schema-cli.ts --update",
     "telegram:poll": "tsx src/research-agent/telegram-poll.ts",
+    "telegram:simulate-brief": "tsx src/research-agent/export-to-writing.ts",
     "telegram:test": "tsx src/research-agent/telegram-test.ts",
     "daily": "tsx src/research-agent/daily.ts",
     "daily:dry": "tsx src/research-agent/daily.ts --dry-run",

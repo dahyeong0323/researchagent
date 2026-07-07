@@ -230,16 +230,41 @@ function evidenceScore(candidate: ScoutCandidate): number {
   return (candidate.evidenceSnippet?.trim().length ?? 0) + (candidate.evidenceParagraphIds?.length ?? 0) * 20;
 }
 
+function sourceTitleFromTopic(candidate: ScoutCandidate): string {
+  const entity = candidate.entityName?.trim();
+  if (!entity || !candidate.topicName.startsWith(`${entity} - `)) {
+    return candidate.topicName;
+  }
+
+  return candidate.topicName.slice(entity.length + 3);
+}
+
+function entityQualityScore(candidate: ScoutCandidate): number {
+  const entity = normalizeTextForDedupe(candidate.entityName);
+  if (!entity) {
+    return 0;
+  }
+
+  const sourceTitle = normalizeTextForDedupe(sourceTitleFromTopic(candidate));
+  const tokenCount = entity.split(" ").filter(Boolean).length;
+  const startsWithFiller = /^(with|for|from|by|the)\s/u.test(entity);
+  const titleMatch = sourceTitle.includes(entity);
+
+  return (titleMatch ? 60 : 0) + Math.min(tokenCount, 4) * 5 - (startsWithFiller ? 50 : 0);
+}
+
 function isBetterScoutCandidate(candidate: ScoutCandidate, current: ScoutCandidate): boolean {
   const candidateRanks = [
     verificationRank(candidate),
     candidate.score,
+    entityQualityScore(candidate),
     candidate.sourceReliability ?? candidate.scoreBreakdown.sourceReliability,
     evidenceScore(candidate)
   ];
   const currentRanks = [
     verificationRank(current),
     current.score,
+    entityQualityScore(current),
     current.sourceReliability ?? current.scoreBreakdown.sourceReliability,
     evidenceScore(current)
   ];

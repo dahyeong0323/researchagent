@@ -191,6 +191,40 @@ describe("Writing Brief v2", () => {
     expect(chooseStyleReference(retailCandidate)).toBe("retail-observation");
   });
 
+  it("keeps Apple Invites app briefs in a product coordination frame", () => {
+    const brief = toWritingBrief(
+      candidate({
+        id: "candidate:manual-url:e29802befa6d52bd:entity:apple-invites",
+        candidateId: "candidate:manual-url:e29802befa6d52bd:entity:apple-invites",
+        topicName: "Apple Invites - Introducing Apple Invites, a new app that brings people together",
+        oneLineSummary:
+          "Apple Invites source evidence: Apple today introduced Apple Invites, a new app for iPhone that helps users create custom invitations.",
+        coreWhyGudiQuestion: "Why did Apple make an invitations app?",
+        businessObservationAngle: "Apple is turning invitations into a coordination surface.",
+        consumerBehaviorAngle: "Hosts need help making plans feel organized and intentional.",
+        sourceUrl:
+          "https://www.apple.com/newsroom/2025/02/introducing-apple-invites-a-new-app-that-brings-people-together/",
+        sourceName: "Apple Newsroom",
+        entityName: "Apple Invites",
+        entityType: "app",
+        observedFeature:
+          "Apple today introduced Apple Invites, a new app for iPhone that helps users create custom invitations.",
+        evidenceSnippet:
+          "Apple today introduced Apple Invites, a new app for iPhone that helps users create custom invitations.",
+        evidenceParagraphIds: ["p2"],
+        verificationStatus: "verified",
+        briefAllowed: true
+      })
+    );
+    const markdown = renderWritingBrief(brief);
+
+    expect(brief.styleReference).toBe("product-observation");
+    expect(markdown).toContain("coordination");
+    expect(markdown).toContain("RSVPs");
+    expect(markdown).not.toContain("offline");
+    expect(markdown).not.toContain("store");
+  });
+
   it("renders the v2 strategy sections", () => {
     const markdown = renderWritingBrief(toWritingBrief(candidate()));
 

@@ -211,6 +211,12 @@ For one polling pass during local testing:
 npm run telegram:poll -- --once
 ```
 
+Before starting a long-running poller, check whether one is already active:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "name = 'node.exe'" | Where-Object { $_.CommandLine -match 'telegram-poll' } | Select-Object ProcessId,CommandLine
+```
+
 The poller only handles Telegram `callback_query` updates. It updates the Notion status and workflow readiness fields by matching the `Candidate ID` property, and stores its Telegram offset in `data/research-agent/telegram-offset.json` only after successful processing. Brief/task buttons resolve candidates from the latest daily snapshot first, then fall back to the local raw input. A Writing Brief is created only when the candidate is verified and `briefAllowed`; otherwise the export path creates a Research Task instead. It does not trigger posting, LinkedIn activity, or any other automation.
 
 ## Feedback Loop
@@ -245,6 +251,12 @@ Generate deeper Writing Brief v2 strategy notes with an LLM pass:
 
 ```powershell
 npm run export:selected:llm
+```
+
+Generate the same Writing Brief or Research Task path used by the Telegram `Make Writing Brief` button, without clicking Telegram:
+
+```powershell
+npm run telegram:simulate-brief -- --candidate-id <candidate-id>
 ```
 
 The LLM pass sharpens the brief before it reaches the writing agent. It focuses on concrete tension, non-obvious insight, business mechanism, consumer psychology, weak theses to avoid, and evidence that still needs checking. If `OPENAI_API_KEY` is missing or the LLM call fails, the exporter falls back to the local rule-based v2 brief.

@@ -26,6 +26,8 @@ type CliOptions = {
   outputDir: string;
   date: string;
   useLlm: boolean;
+  candidateId?: string;
+  candidateSnapshotPath?: string;
 };
 
 function todayIsoDate(): string {
@@ -53,6 +55,12 @@ function readCliOptions(argv: string[]): CliOptions {
       index += 1;
     } else if (arg === "--output-dir" && next) {
       options.outputDir = next;
+      index += 1;
+    } else if (arg === "--candidate-id" && next) {
+      options.candidateId = next;
+      index += 1;
+    } else if (arg === "--candidate-snapshot" && next) {
+      options.candidateSnapshotPath = next;
       index += 1;
     } else if (arg === "--date" && next) {
       options.date = next;
@@ -187,6 +195,20 @@ function isMeditationAccountabilityCase(candidate: ScoutCandidate): boolean {
   );
 }
 
+function isDigitalProductCandidate(candidate: ScoutCandidate): boolean {
+  const text = ` ${candidateText(candidate)} `;
+  const launchText =
+    text.includes(" new app ") ||
+    text.includes(" iphone") ||
+    text.includes(" software") ||
+    text.includes(" launched ") ||
+    text.includes(" introduced ");
+  return (
+    ((candidate.entityType === "app" || candidate.entityType === "product") && launchText) ||
+    text.includes("apple invites")
+  );
+}
+
 function isUnverifiedSource(candidate: ScoutCandidate): boolean {
   return candidate.sourceName === "샘플 수동 입력" || candidate.sourceUrl.includes("example.com");
 }
@@ -212,6 +234,11 @@ function compactTopicName(candidate: ScoutCandidate): string {
 }
 
 export function inferRefinedCoreQuestion(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    const entity = candidate.entityName ?? compactTopicName(candidate);
+    return `${entity} is asking people to coordinate socially, not just tap another utility.`;
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "명상은 원래 혼자 하는데, 왜 친구 체크인을 앞세울까?";
   }
@@ -255,6 +282,10 @@ export function inferRefinedCoreQuestion(candidate: ScoutCandidate): string {
 }
 
 export function chooseStyleReference(candidate: ScoutCandidate): WritingBriefStyleReference {
+  if (isDigitalProductCandidate(candidate)) {
+    return "product-observation";
+  }
+
   if (candidate.category === "리테일/브랜드" || candidate.category === "팝업/오프라인") {
     return "retail-observation";
   }
@@ -275,6 +306,11 @@ export function chooseStyleReference(candidate: ScoutCandidate): WritingBriefSty
 }
 
 export function inferCoreTension(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    const entity = candidate.entityName ?? candidate.topicName;
+    return `${entity} sits between a simple product launch and a harder behavior question: why would people move planning, RSVPs, photos, and music into one invitation flow?`;
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "명상은 본래 혼자 조용히 하는 행위인데, 이 앱은 오히려 친구의 확인을 전면에 둔다.";
   }
@@ -299,6 +335,10 @@ export function inferCoreTension(candidate: ScoutCandidate): string {
 }
 
 export function inferBusinessMechanism(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    return "The mechanism is not only a new app surface. It may pull invitation creation, guest responses, shared albums, and Apple Music into one loop, making the social event itself a reason to use more of the ecosystem. Actual adoption and retention effects still need evidence.";
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "콘텐츠 경쟁이 아니라 habit retention과 accountability를 설계하는 방식이다. 명상을 더 많이 공급하는 대신, 사용자가 다시 돌아오고 약속을 끊지 않게 만드는 장치를 전면에 둔다.";
   }
@@ -323,6 +363,10 @@ export function inferBusinessMechanism(candidate: ScoutCandidate): string {
 }
 
 export function inferConsumerPsychology(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    return "Invitations carry a small but sensitive social burden: making the plan look intentional, collecting replies, and giving guests a place to participate before and after the event.";
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "사람은 의지만으로 루틴을 지속하기 어렵고, 누군가가 확인할 때 행동을 개인 목표가 아니라 작은 약속처럼 느낀다.";
   }
@@ -347,6 +391,10 @@ export function inferConsumerPsychology(candidate: ScoutCandidate): string {
 }
 
 export function inferNonObviousInsight(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    return "The interesting move is that an invitation is treated as a lightweight social workspace, not just a prettier message template.";
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "웰니스 앱의 다음 경쟁은 더 깊은 명상 콘텐츠가 아니라, 혼자 해야 하는 행동을 사회적 책임감으로 바꾸는 설계일 수 있다.";
   }
@@ -371,6 +419,10 @@ export function inferNonObviousInsight(candidate: ScoutCandidate): string {
 }
 
 export function inferSharpThesis(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    return "A small utility can become strategically meaningful when it owns the coordination moment around a social event.";
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "이 기능의 핵심은 명상을 더 잘하게 하는 것이 아니라, 명상을 계속하게 만드는 것일 수 있다.";
   }
@@ -395,6 +447,15 @@ export function inferSharpThesis(candidate: ScoutCandidate): string {
 }
 
 export function inferGenericThesisToAvoid(candidate: ScoutCandidate): string[] {
+  if (isDigitalProductCandidate(candidate)) {
+    return [
+      "Apple made another app",
+      "Invitations are becoming digital",
+      "Ecosystem lock-in explains everything",
+      "The feature will automatically drive retention"
+    ];
+  }
+
   const avoid = [
     "소비자는 경험을 산다",
     "커뮤니티가 중요하다",
@@ -421,6 +482,11 @@ export function inferGenericThesisToAvoid(candidate: ScoutCandidate): string[] {
 }
 
 export function inferBetterOpeningScene(candidate: ScoutCandidate): string {
+  if (isDigitalProductCandidate(candidate)) {
+    const entity = candidate.entityName ?? candidate.topicName;
+    return `Start with someone making an invitation in ${entity}: the choice is not just the design, but whether the host can make the whole gathering feel easier to coordinate.`;
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return "실제 화면에서 친구 체크인이 개인 세션보다 더 잘 보이는 위치에 있다면, 그 장면에서 시작한다.";
   }
@@ -445,6 +511,21 @@ export function inferBetterOpeningScene(candidate: ScoutCandidate): string {
 }
 
 export function inferEvidenceNeeded(candidate: ScoutCandidate): string[] {
+  if (isDigitalProductCandidate(candidate)) {
+    const evidence = [
+      `Confirm the exact feature scope for '${candidate.topicName}' in the official source.`,
+      "Verify invitations, RSVPs, Shared Albums, Apple Music playlists, and platform availability before describing the user flow.",
+      "Do not claim adoption, retention, ecosystem lock-in, or user reaction without separate evidence.",
+      ...(candidate.needsVerification ?? [])
+    ];
+
+    if (candidate.missingFields && candidate.missingFields.length > 0) {
+      evidence.push(...candidate.missingFields.map((field) => `Complete missing verification field: ${field}`));
+    }
+
+    return [...new Set(evidence)];
+  }
+
   const evidence = [
     `원문 출처에서 '${candidate.topicName}'이 실제로 제공하거나 발표한 기능/실험의 정확한 범위 확인`,
     "공식 페이지, 앱 화면, 보도자료 중 하나로 사실관계 재확인"
@@ -526,6 +607,20 @@ export function inferEvidenceBoundary(candidate: ScoutCandidate): WritingBrief["
 }
 
 function postOutlineFor(candidate: ScoutCandidate): string[] {
+  if (isDigitalProductCandidate(candidate)) {
+    const entity = candidate.entityName ?? candidate.topicName;
+    return [
+      `At first glance, ${entity} looks like a small app announcement.`,
+      "The sharper question is why this invitation moment is worth owning.",
+      `Narrow the question to: ${inferRefinedCoreQuestion(candidate)}`,
+      "Invitations are coordination objects: they gather plans, replies, memories, and small signals of care.",
+      "That makes the host's burden the useful lens, not the visual design alone.",
+      inferBusinessMechanism(candidate),
+      "Keep the evidence boundary tight: the official source supports the feature announcement, not adoption or business impact.",
+      inferSharpThesis(candidate)
+    ];
+  }
+
   if (isMeditationAccountabilityCase(candidate)) {
     return [
       "명상 앱은 혼자 조용히 쓰는 앱이라고 생각했다.",
@@ -1051,6 +1146,26 @@ export async function writeResearchTaskForCandidateId(
 
 async function main(): Promise<void> {
   const options = readCliOptions(process.argv.slice(2));
+
+  if (options.candidateId) {
+    const outputPath = await writeWritingBriefForCandidateId(options.candidateId, {
+      inputPath: options.inputPath,
+      feedbackPath: options.feedbackPath,
+      candidateSnapshotPath: options.candidateSnapshotPath,
+      outputDir: options.outputDir,
+      date: options.date,
+      useLlm: options.useLlm
+    });
+
+    if (!outputPath) {
+      throw new Error(`Candidate not found: ${options.candidateId}`);
+    }
+
+    const label = outputPath.includes("research-task-") ? "Exported research task" : "Exported writing brief";
+    process.stdout.write(`${label}: ${outputPath}\n`);
+    return;
+  }
+
   if (!options.feedbackPath) {
     throw new Error("--feedback is required to find Selected candidates.");
   }

@@ -69,6 +69,30 @@ describe("candidate generation from document", () => {
     });
   });
 
+  it("extracts the product name from titles that start with Introducing", () => {
+    const [candidate] = generateCandidatesFromDocument(
+      sourceDocument(
+        [
+          "CUPERTINO, CALIFORNIA Apple today introduced Apple Invites, a new app for iPhone that helps users create custom invitations.",
+          "With Apple Invites, users can create and easily share invitations, RSVP, and contribute to Shared Albums."
+        ],
+        {
+          title: "Introducing Apple Invites, a new app that brings people together",
+          siteName: "Apple Newsroom",
+          canonicalUrl:
+            "https://www.apple.com/newsroom/2025/02/introducing-apple-invites-a-new-app-that-brings-people-together/"
+        }
+      )
+    );
+
+    expect(candidate.entityName).toBe("Apple Invites");
+    expect(candidate.entityType).toBe("app");
+    expect(candidate.observedFeature).toContain("introduced");
+    expect(candidate.evidenceSnippet).toContain("introduced Apple Invites");
+    expect(candidate.verificationStatus).toBe("verified");
+    expect(candidate.briefAllowed).toBe(true);
+  });
+
   it("preserves startup source metadata when generating RawSourceItems from documents", () => {
     const [item] = generateRawSourceItemsFromDocument(
       sourceDocument(["Acme AI launched a diagnostic workflow for small clinics."], {

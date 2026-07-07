@@ -34,6 +34,39 @@ function info(message: string): void {
 
 export { parseTelegramCallbackData } from "./telegram-callback.ts";
 
+export async function handleTelegramCallbackDataLocally(data: string | undefined): Promise<
+  | { ok: true; action: "research-task:create" | "brief:create"; outputPath: string; message: string }
+  | { ok: false; message: string }
+> {
+  const parsed = parseTelegramCallbackData(data);
+  if (!parsed) {
+    return { ok: false, message: "Unsupported callback data." };
+  }
+
+  if (parsed.action === "research-task:create") {
+    const outputPath = await writeResearchTaskForCandidateId(parsed.candidateId);
+    if (!outputPath) {
+      return { ok: false, message: `Research task creation failed: candidate not found (${parsed.candidateId})` };
+    }
+
+    return { ok: true, action: parsed.action, outputPath, message: `Research task created: ${outputPath}` };
+  }
+
+  if (parsed.action === "brief:create") {
+    const outputPath = await writeWritingBriefForCandidateId(parsed.candidateId);
+    if (!outputPath) {
+      return { ok: false, message: `Writing brief creation failed: candidate not found (${parsed.candidateId})` };
+    }
+
+    const message = outputPath.includes("research-task-")
+      ? `Writing brief blocked because this candidate is not verified. Research task created: ${outputPath}`
+      : `Writing brief created: ${outputPath}`;
+    return { ok: true, action: parsed.action, outputPath, message };
+  }
+
+  return { ok: false, message: "Callback action requires Notion status handling." };
+}
+
 function buildWritingBriefKeyboard(candidateId: string): TelegramReplyMarkup {
   return {
     inline_keyboard: [
@@ -145,17 +178,16 @@ async function processUpdate(update: TelegramUpdate, botToken: string): Promise<
   }
 
   if (parsed.action === "research-task:create") {
-    const outputPath = await writeResearchTaskForCandidateId(parsed.candidateId);
-    if (!outputPath) {
-      const message = `Research task creation failed: candidate not found (${parsed.candidateId})`;
-      warn(message);
-      await answerCallbackQuery(botToken, callbackQuery.id, message.slice(0, 180)).catch((error) =>
+    const result = await handleTelegramCallbackDataLocally(callbackQuery.data);
+    if (!result.ok) {
+      warn(result.message);
+      await answerCallbackQuery(botToken, callbackQuery.id, result.message.slice(0, 180)).catch((error) =>
         warn(error instanceof Error ? error.message : String(error))
       );
       return;
     }
 
-    const message = `Research task created: ${outputPath}`;
+    const message = result.message;
     await answerCallbackQuery(botToken, callbackQuery.id, "Research task created");
     await sendTelegramMessage(message);
     info(message);

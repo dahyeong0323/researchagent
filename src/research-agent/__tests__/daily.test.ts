@@ -546,6 +546,86 @@ describe("daily batch runner", () => {
     }
   });
 
+  it("keeps the title-backed product entity when one article yields several candidates", async () => {
+    const paths = await tempRunPaths();
+    const appleUrl =
+      "https://www.apple.com/newsroom/2025/02/introducing-apple-invites-a-new-app-that-brings-people-together/";
+
+    try {
+      await writeFile(paths.manualInboxPath, `${JSON.stringify([appleUrl])}\n`, "utf8");
+      const result = await runDaily(
+        {
+          dryRun: true,
+          date: "2026-07-04",
+          feedsPath: paths.feedsPath,
+          manualInboxPath: paths.manualInboxPath,
+          runsDir: paths.runsDir
+        },
+        {
+          now,
+          collectRssFeeds: async () => [],
+          collectManualUrl: async () => ({
+            rawSourceItem: verifiedRawItem({
+              id: "manual-apple",
+              collectorType: "manual-url",
+              title: "Introducing Apple Invites, a new app that brings people together",
+              sourceUrl: appleUrl,
+              sourceName: "Apple Newsroom",
+              rawSummary:
+                "CUPERTINO, CALIFORNIA Apple today introduced Apple Invites, a new app for iPhone.",
+              entityName: "With Apple",
+              entityType: "app",
+              observedFeature: "introduced Apple Invites",
+              evidenceSnippet:
+                "CUPERTINO, CALIFORNIA Apple today introduced Apple Invites, a new app for iPhone.",
+              evidenceType: "article",
+              verificationStatus: "verified"
+            }),
+            sourceDocument: sourceDocument({
+              id: "manual-url:e29802befa6d52bd",
+              documentId: "manual-url:e29802befa6d52bd",
+              sourceItemId: "manual-apple",
+              canonicalUrl: appleUrl,
+              title: "Introducing Apple Invites, a new app that brings people together",
+              siteName: "Apple Newsroom",
+              contentText: [
+                "Introducing Apple Invites, a new app that brings people together for life's special moments",
+                "CUPERTINO, CALIFORNIA Apple today introduced Apple Invites, a new app for iPhone that helps users create custom invitations.",
+                "With Apple Invites, users can create and easily share invitations, RSVP, and contribute to Shared Albums."
+              ].join("\n"),
+              paragraphs: [
+                {
+                  id: "p1",
+                  index: 0,
+                  text: "Introducing Apple Invites, a new app that brings people together for life's special moments"
+                },
+                {
+                  id: "p2",
+                  index: 1,
+                  text:
+                    "CUPERTINO, CALIFORNIA Apple today introduced Apple Invites, a new app for iPhone that helps users create custom invitations."
+                },
+                {
+                  id: "p3",
+                  index: 2,
+                  text:
+                    "With Apple Invites, users can create and easily share invitations, RSVP, and contribute to Shared Albums."
+                }
+              ]
+            })
+          })
+        }
+      );
+
+      expect(result.candidates).toHaveLength(1);
+      expect(result.candidates[0]?.entityName).toBe("Apple Invites");
+      expect(result.candidates[0]?.candidateId).toContain("entity:apple-invites");
+      expect(result.candidates[0]?.briefAllowed).toBe(true);
+    } finally {
+      await rm(paths.root, { recursive: true, force: true });
+    }
+  });
+
   it("creates one needs-research fallback candidate when manual document extraction finds no entity", async () => {
     const paths = await tempRunPaths();
     try {

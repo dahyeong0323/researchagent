@@ -59,6 +59,7 @@ const titleTriggers = [
   "expanded",
   "introduces",
   "introduced",
+  "introducing",
   "rolls out",
   "rolled out",
   "출시",
@@ -350,12 +351,27 @@ function titleEntityNameBeforeTrigger(value: string): string {
   return segments[segments.length - 1] ?? value;
 }
 
+function titleEntityNameAfterTrigger(value: string): string {
+  const segment = value.split(/[,|:-]/u)[0]?.trim() ?? value;
+  const englishNames = englishProperNames(segment);
+  if (englishNames.length > 0) {
+    return englishNames[0];
+  }
+
+  const words = segment.split(/\s+/u).filter(Boolean);
+  return words.slice(0, 3).join(" ") || segment;
+}
+
 function extractTitleEntity(document: SourceDocument): Entity | undefined {
   const title = normalizeName(document.title);
   const lowerTitle = title.toLowerCase();
 
   for (const trigger of titleTriggers) {
     const index = lowerTitle.indexOf(trigger.toLowerCase());
+    if (index === 0) {
+      const displayName = titleEntityNameAfterTrigger(title.slice(trigger.length));
+      return createEntity(displayName, "title", 0.78, inferEntityType(displayName, document));
+    }
     if (index > 1) {
       const displayName = titleEntityNameBeforeTrigger(title.slice(0, index));
       return createEntity(displayName, "title", 0.72, inferEntityType(displayName, document));
